@@ -11,7 +11,7 @@ all computed live.
 
 <!-- 🔗 Live: https://fairfax.industries (not yet hosted) -->
 <!-- Add a screenshot or GIF here once hosted — it's the single biggest thing for a public repo. -->
-<!-- ![Proving Ground](docs/screenshot.png) -->
+<!-- ![New Build](docs/screenshot.png) -->
 
 ## Features
 
@@ -95,9 +95,10 @@ docs/
 
 ## Roadmap
 
-See [docs/roadmap.md](docs/roadmap.md) for where this is headed — the near-term themes are
-mobile/touch support, trust surfaces (methodology + data-freshness), hosting, and deeper
-engine work. It's a living list of ideas, not commitments.
+See [docs/features.md](docs/features.md) for shipped features and where this is headed — the
+near-term open themes are caching/hosting, automated data sync, richer link previews, and
+deeper engine work. Known bugs and limitations live in [docs/bugs.md](docs/bugs.md). Both are
+living lists, not commitments.
 
 ## Status & contributing
 

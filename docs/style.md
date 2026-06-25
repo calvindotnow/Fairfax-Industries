@@ -2,7 +2,7 @@
 
 **This is the source of truth for the UI as it is actually built today.** It is captured from the live code (`src/app/globals.css` + the components), not an aspirational redesign brief. When you change a token or establish a new pattern, **update this file in the same change** and keep hex values in sync with `globals.css`. Add notable shifts to the [Changelog](#changelog).
 
-> Not to be confused with [claude-design-handoff.md](claude-design-handoff.md), which is an older, aspirational brief written for an external design tool (it even proposes a different typeface). For "what the UI is right now," trust **this** file.
+> Companion docs: [features.md](features.md) (what's shipped + planned) and [bugs.md](bugs.md) (known issues). This file covers the *look* — "what the UI is right now."
 
 ---
 
@@ -211,4 +211,4 @@ Sentence case, terse, confident, editorial. ALL-CAPS only for overlines, section
 - **2026-06-25** — Wave 4 (execution plan): hero pages (`/heroes`, `/heroes/[id]`) + item browser (`/items`); shareable build pages (`/b/[code]`, server-decoded + crawlable, with `generateMetadata`); A/B build compare (lock build A → assemble an empty build B; the Compare button expands/minimizes without discarding either; A|B tabs swap which you edit; bar-graph deltas with green/red +/− plus defensive stats — additive); patch-stable share codes (name-hash, V1 back-compat); engine depth (procs folded into sustained DPS; melee surfaced); patch-history snapshots + `/patch-notes`; hard 12-item loadout cap. Nav gained Heroes/Items; footer links Methodology + Patch notes.
 - **2026-06-25** — Wave 2 (execution plan): footer **data-freshness badge** (from `max(heroes.updatedAt)`); a `/methodology` page + a "How this is calculated" disclosure in the Damage panel; first-run **onboarding card** (localStorage-dismissed) and reusable **`InfoDot`** glossary popovers on stat labels; a transient **merge toast** when item upgrades collapse components; **`--text-dim` raised to AA** and category text labels added (resolves a11y gaps #1 and most of #2).
 - **2026-06-25** — Wave 1 (execution plan): build tool made responsive via the `useIsNarrow` hook (containers stack ≤768px); all art moved to `next/image` (CDN whitelisted in `next.config.ts`, kills CLS); added the touch `ItemSheet` + keyboard-focus details path and `aria-pressed`/`aria-label` on shop and loadout controls. Resolves a11y gap #3 for the shop.
-- **2026-06-25** — Initial style guide captured from the current implementation (warm matte noir + parchment armory; Oswald/Archivo; token system in `globals.css`). Supersedes `claude-design-handoff.md` as the description of the *current* UI.
+- **2026-06-25** — Initial style guide captured from the current implementation (warm matte noir + parchment armory; Oswald/Archivo; token system in `globals.css`).
