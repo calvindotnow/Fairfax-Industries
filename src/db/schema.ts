@@ -32,9 +32,11 @@ export const heroes = sqliteTable("heroes", {
     // Falloff info (m)
     falloffStart: real("falloff_start").notNull().default(22),
     falloffEnd: real("falloff_end").notNull().default(58),
-    // Bonus stats
-    lightMeleeDistance: real("light_melee_distance").notNull().default(250),
-    heavyMeleeDistance: real("heavy_melee_distance").notNull().default(500),
+    // Melee — base light/heavy melee DAMAGE (level 1), plus the per-level growth
+    // amount (API: standard_level_up_upgrades.MODIFIER_VALUE_BASE_MELEE_DAMAGE_FROM_LEVEL).
+    lightMeleeDamage: real("light_melee_damage").notNull().default(50),
+    heavyMeleeDamage: real("heavy_melee_damage").notNull().default(116),
+    meleePerLevel: real("melee_damage_per_level").notNull().default(0),
     createdAt: integer("created_at", { mode: "timestamp" })
         .$defaultFn(() => new Date()),
     updatedAt: integer("updated_at", { mode: "timestamp" })
@@ -95,6 +97,16 @@ export const itemStatModifiers = sqliteTable("item_stat_modifiers", {
     statName: text("stat_name").notNull(), // e.g. "maxHealth", "bulletDamage"
     flatBonus: real("flat_bonus").notNull().default(0),
     percentBonus: real("percent_bonus").notNull().default(0),
+});
+
+// ─── Stat snapshots (patch history) ────────────────────────────────────────────
+// One row per data sync: a JSON snapshot of hero/item stats. Diffing the two most
+// recent snapshots powers "what changed for my build" (R-5). Accumulates over syncs.
+export const statSnapshots = sqliteTable("stat_snapshots", {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    takenAt: integer("taken_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+    label: text("label").notNull(), // human label, e.g. "2026-06-25"
+    payload: text("payload").notNull(), // JSON SnapshotPayload (see lib/patch-diff)
 });
 
 // ─── Relations ────────────────────────────────────────────────────────────────

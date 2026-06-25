@@ -67,6 +67,10 @@ export interface HeroData {
     spiritScaling?: string | null; // JSON map of stat -> per-spirit coefficient
     falloffStart: number;
     falloffEnd: number;
+    // Base light/heavy melee damage (level 1) + per-level growth amount.
+    lightMeleeDamage?: number;
+    heavyMeleeDamage?: number;
+    meleePerLevel?: number;
 }
 
 export interface HeroWithAbilities extends HeroData {
@@ -164,9 +168,12 @@ export interface SimResult {
 
     range: number;
     sustainedDps: number;
+    procDps: number; // on-hit proc damage per second, included in sustainedDps
     damagePerShot: number;
     timeToKill: number | null; // seconds
     theirEhp: number;
+    /** Base melee damage, mitigated by the target's bullet resist (not added to burst). */
+    melee: { light: number; heavy: number };
 
     abilities: AbilityRow[];
     burst: BurstResult;

@@ -8,6 +8,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../src/db";
 import { heroes, abilities, items, itemStatModifiers } from "../src/db/schema";
+import { captureSnapshot } from "../src/lib/snapshot";
 
 const HEROES_URL = "https://api.deadlock-api.com/v1/assets/heroes?only_active=true";
 const ITEMS_URL = "https://api.deadlock-api.com/v1/assets/items";
@@ -254,8 +255,9 @@ async function main() {
                 falloffEnd: num(gun.damage_falloff_end_range) != null
                     ? Math.round((num(gun.damage_falloff_end_range)! / UNITS_PER_METER) * 10) / 10
                     : 58,
-                lightMeleeDistance: num(s.light_melee_damage) ?? 250,
-                heavyMeleeDistance: num(s.heavy_melee_damage) ?? 500,
+                lightMeleeDamage: num(s.light_melee_damage) ?? 50,
+                heavyMeleeDamage: num(s.heavy_melee_damage) ?? 116,
+                meleePerLevel: num(boon.MODIFIER_VALUE_BASE_MELEE_DAMAGE_FROM_LEVEL) ?? 0,
                 bulletDamagePerLevel: (num(boon.MODIFIER_VALUE_BASE_BULLET_DAMAGE_FROM_LEVEL) ?? 0) * pellets,
                 healthPerLevel: num(boon.MODIFIER_VALUE_BASE_HEALTH_FROM_LEVEL) ?? 0,
                 spiritPerLevel: num(boon.MODIFIER_VALUE_TECH_POWER) ?? 0,
@@ -323,6 +325,8 @@ async function main() {
         }
     }
     console.log(`  inserted ${heroCount} heroes, ${abilityCount} abilities`);
+    await captureSnapshot();
+    console.log("  captured stat snapshot for patch history");
     console.log("Done.");
 }
 

@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { heroes, items } from "@/db/schema";
 import { sql, isNotNull } from "drizzle-orm";
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowRight } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export default async function HomePage() {
   const [itemRow] = await db.select({ count: sql<number>`count(*)` }).from(items);
 
   const portraits = await db
-    .select({ name: heroes.name, image: heroes.imageUrl })
+    .select({ id: heroes.id, name: heroes.name, image: heroes.imageUrl })
     .from(heroes)
     .where(isNotNull(heroes.imageUrl))
     .limit(12);
@@ -32,10 +33,10 @@ export default async function HomePage() {
         </p>
         <div className="mt-8 flex items-center gap-4">
           <Link
-            href="/proving-ground"
+            href="/hideout"
             className="group inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
           >
-            Open the Proving Ground
+            Start building
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
           </Link>
         </div>
@@ -45,18 +46,20 @@ export default async function HomePage() {
       <section>
         <div className="flex flex-wrap gap-2.5">
           {portraits.map((h) => (
-            <div
+            <Link
               key={h.name}
-              title={h.name}
+              href={`/hideout?hero=${h.id}`}
+              title={`${h.name} — open in New Build`}
               className="h-14 w-14 overflow-hidden rounded-md surface"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <Image
                 src={h.image!}
                 alt={h.name}
+                width={56}
+                height={56}
                 className="h-full w-full object-cover opacity-90 transition-opacity hover:opacity-100"
               />
-            </div>
+            </Link>
           ))}
         </div>
         <p className="mt-4 text-sm text-muted-foreground">
@@ -78,8 +81,8 @@ export default async function HomePage() {
             body: "See where each item stops being worth its souls before you commit.",
           },
           {
-            title: "Compare builds",
-            body: "Put two builds side by side and settle the argument with numbers.",
+            title: "Test any matchup",
+            body: "Pit your build against any enemy's resistances and read the real damage.",
           },
         ].map((f) => (
           <div key={f.title} className="bg-background p-6">

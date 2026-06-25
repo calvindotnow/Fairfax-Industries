@@ -1,6 +1,6 @@
 # Roadmap
 
-Where Fairfax Industries is headed. This is a living list of candidate work, not a commitment — order and scope will shift.
+Where Fairfax Industries is headed. This is a living list of candidate work, not a commitment — order and scope will shift. Prioritized, per-feature execution detail lives in [execution-plan.md](execution-plan.md); problem statements in [issues-and-roadmap-handoff.md](issues-and-roadmap-handoff.md).
 
 Legend: 🔴 critical · 🟠 high · 🟡 nice-to-have
 
@@ -17,11 +17,11 @@ Legend: 🔴 critical · 🟠 high · 🟡 nice-to-have
 
 ## Now — fix what's blocking people
 
-- [ ] 🔴 **Mobile & touch support** — make the Proving Ground reflow on phones/tablets (it currently overflows and is desktop-only)
+- [ ] 🔴 **Mobile & touch support** — make the build tool (New Build · `/hideout`) reflow on phones/tablets (it currently overflows and is desktop-only)
 - [ ] 🔴 **Tap-to-view item details** — item stats are hover-only today, so touch users see nothing
 - [ ] 🟠 **"Data synced · patch · date" badge** — show how current the numbers are
 - [ ] 🟠 **Faster shop** — lazy-load item images, add image dimensions (no layout shift), cache between patches
-- [ ] 🟡 **Quick fixes** — clamp headshots ≤ shots, reliable "link copied" feedback, link the homepage hero portraits, one consistent name for the tool
+- [ ] 🟡 **Quick fixes** — clamp headshots ≤ shots, reliable "link copied" feedback, link the homepage hero portraits, rename the tool to **New Build · `/hideout`** (retire "Proving Ground")
 
 ## Next — earn trust & become a destination
 
@@ -37,8 +37,11 @@ Legend: 🔴 critical · 🟠 high · 🟡 nice-to-have
 
 - [ ] 🟠 **Deeper damage engine** — item stacking buffs, active items as combo steps, melee (✅ damage-over-time, crit/headshot reduction, and your-side EHP already shipped)
 - [ ] 🟡 **Patch impact** — show how a new patch moved your build's numbers
-- [ ] 🟡 **Build guides** — curated or community theorycraft write-ups
 - [ ] 🟡 **Accessibility pass** — color-independent category labels, WCAG-AA contrast, keyboard/screen-reader support
+
+## Parking lot — absolute last, may never ship
+
+- [ ] **Build guides** — curated or community theorycraft write-ups
 
 ---
 

@@ -91,7 +91,7 @@
   /* Paper scale */
   --paper-50:  #e9e5dc;
   --paper-400: #918c81;
-  --paper-500: #75716a;
+  --paper-500: #88837a; /* raised from #75716a → ~4.66:1 on --background (WCAG AA) */
 
   /* Brass */
   --brass-200: #f0d8ab;

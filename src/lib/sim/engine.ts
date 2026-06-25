@@ -361,8 +361,38 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
 
     const combat = calculateWeaponHit(heroStats, hero, targetStats, opts.range);
     const cwm = conditionalWeaponMult(items, effects, opts.range, inv.weaponPct);
-    const sustainedDps = combat.dps * cwm;
     const damagePerShot = combat.damagePerBullet * cwm;
+
+    const bulletResFactor = 1 - (targetStats.bulletResist ?? 0) / 100;
+    const spiritResFactor = 1 - (targetStats.spiritResist ?? 0) / 100;
+
+    // On-hit procs sustained over time: a proc fires every `procCooldown` seconds
+    // (0 = every shot), capped at the weapon's fire rate. Folded into sustained DPS.
+    const fireRate = heroStats.weaponFireRate ?? 0;
+    let procDps = 0;
+    for (const e of effects.filter((e) => e.kind === "onHitProc")) {
+        const per =
+            e.valueType === "percentOfShot"
+                ? damagePerShot * (e.value / 100)
+                : e.value * (e.damageType === "spirit" ? spiritResFactor : bulletResFactor);
+        const c = e.procCooldown ?? 1;
+        const rate = c <= 0 ? fireRate : Math.min(1 / c, fireRate || 1 / c);
+        procDps += per * rate;
+    }
+    const sustainedDps = combat.dps * cwm + procDps;
+
+    // Melee damage: base × per-level growth, then bullet resist (which reduces
+    // melee too, per the Deadlock wiki). Light grows by meleePerLevel each boon;
+    // heavy grows at the same fractional rate. Validated vs known values — e.g.
+    // Bebop heavy +2.91/boon = 1.58 × 116/63. Surfaced separately, not in burst.
+    // (Not yet modeled: the +50% Weapon-Damage scaling, melee-damage items, and
+    //  the separate Melee-Resist channel — see the melee notes.)
+    const lightMeleeBase = hero.lightMeleeDamage ?? 0;
+    const meleeGrowth = lightMeleeBase > 0 ? 1 + Math.max(0, level - 1) * ((hero.meleePerLevel ?? 0) / lightMeleeBase) : 1;
+    const melee = {
+        light: lightMeleeBase * meleeGrowth * bulletResFactor,
+        heavy: (hero.heavyMeleeDamage ?? 0) * meleeGrowth * bulletResFactor,
+    };
 
     const theirEhp = targetStats.maxHealth / Math.max(1 - (targetStats.bulletResist ?? 0) / 100, 0.05);
     const timeToKill = sustainedDps > 0 ? targetStats.maxHealth / sustainedDps : null;
@@ -392,9 +422,11 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
         targetStats,
         range: opts.range,
         sustainedDps,
+        procDps,
         damagePerShot,
         timeToKill,
         theirEhp,
+        melee,
         abilities,
         burst,
     };

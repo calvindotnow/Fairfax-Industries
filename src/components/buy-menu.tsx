@@ -1,8 +1,25 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import type { ItemWithModifiers, ItemStatModifier } from "@/db/schema";
 import { parseEffects, STAT_DEFINITIONS, type ItemEffect } from "@/lib/sim";
+import { useIsNarrow } from "@/lib/use-narrow";
+
+// True on devices with a real hover-capable pointer (mouse/trackpad). On touch
+// (`hover: none`) we open an explicit details sheet instead of relying on hover.
+// Defaults to true so SSR matches the desktop-first render, then corrects on mount.
+function useCanHover() {
+    const [canHover, setCanHover] = useState(true);
+    useEffect(() => {
+        const mq = window.matchMedia("(hover: hover) and (pointer: fine)");
+        const update = () => setCanHover(mq.matches);
+        update();
+        mq.addEventListener("change", update);
+        return () => mq.removeEventListener("change", update);
+    }, []);
+    return canHover;
+}
 
 const CAT_COLOR: Record<string, string> = {
     weapon: "var(--weapon-400)",
@@ -50,6 +67,11 @@ export default function BuyMenu({ items, loadout, onAdd, onRemove, buyingFor, on
     const [cat, setCat] = useState<Cat>("weapon");
     const [search, setSearch] = useState("");
     const [hover, setHover] = useState<{ item: ItemWithModifiers; x: number; y: number } | null>(null);
+    // On touch, tapping a tile opens this details sheet (with an explicit Buy/Sell
+    // button) instead of buying blind. On hover devices, clicks still buy directly.
+    const [selected, setSelected] = useState<ItemWithModifiers | null>(null);
+    const canHover = useCanHover();
+    const narrow = useIsNarrow();
 
     // Upgrade relationships: each item's direct components, and what each item builds into.
     const upgrades = useMemo(() => {
@@ -88,7 +110,7 @@ export default function BuyMenu({ items, loadout, onAdd, onRemove, buyingFor, on
             <DecoCorners />
 
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "4px 8px 14px", borderBottom: "1px solid var(--parch-line)" }}>
+            <div style={{ display: "flex", flexDirection: narrow ? "column" : "row", alignItems: narrow ? "stretch" : "center", justifyContent: "space-between", gap: narrow ? 10 : 16, padding: "4px 8px 14px", borderBottom: "1px solid var(--parch-line)" }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
                     <span style={{ fontFamily: "var(--font-oswald)", fontWeight: 700, fontSize: 24, letterSpacing: "0.06em", color: "var(--parch-ink)" }}>FAIRFAX</span>
                     <span style={{ fontFamily: "var(--font-oswald)", fontWeight: 500, fontSize: 11, letterSpacing: "0.22em", color: "var(--parch-ink-soft)" }}>ARTILLERY BOUGHT &amp; SOLD</span>
@@ -96,17 +118,17 @@ export default function BuyMenu({ items, loadout, onAdd, onRemove, buyingFor, on
                 <BuyForToggle value={buyingFor} onChange={onBuyingForChange} attackerName={attackerName} targetName={targetName} />
                 <div style={{ display: "flex", alignItems: "center", height: 30, padding: "0 10px", gap: 7, minWidth: 180, background: "rgba(44,35,22,0.10)", border: "1px solid var(--parch-line)", borderRadius: "var(--r-sm)" }}>
                     <span style={{ color: "var(--parch-ink-soft)", fontSize: 13 }}>⌕</span>
-                    <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search items"
+                    <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search items" aria-label="Search items"
                         style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontFamily: "var(--font-archivo)", fontSize: 13, color: "var(--parch-ink)" }} />
                 </div>
             </div>
 
             {/* Category tabs */}
-            <div style={{ display: "flex", gap: 4, padding: "8px 4px 10px" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, padding: "8px 4px 10px" }}>
                 {(["weapon", "vitality", "spirit"] as Cat[]).map((c) => {
                     const on = cat === c;
                     return (
-                        <button key={c} type="button" onClick={() => setCat(c)}
+                        <button key={c} type="button" onClick={() => setCat(c)} aria-pressed={on} aria-label={`${c} items (${catCounts[c]})`}
                             style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 34, padding: "0 16px", cursor: "pointer",
                                 borderRadius: "var(--r-sm)", fontFamily: "var(--font-oswald)", fontWeight: 600, fontSize: 14,
                                 letterSpacing: "0.05em", textTransform: "uppercase",
@@ -124,7 +146,7 @@ export default function BuyMenu({ items, loadout, onAdd, onRemove, buyingFor, on
             </div>
 
             {/* Tier quadrants */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: narrow ? "1fr" : "repeat(2, 1fr)", gap: 8 }}>
                 {TIERS.map((t) => {
                     const tierItems = pool.filter((i) => i.tier === t);
                     const dark = t === 4;
@@ -149,10 +171,15 @@ export default function BuyMenu({ items, loadout, onAdd, onRemove, buyingFor, on
                                     const color = CAT_COLOR[it.category] ?? "var(--text)";
                                     return (
                                         <button key={it.id}
-                                            onClick={() => toggle(it)}
-                                            onMouseEnter={(e) => setHover({ item: it, x: e.clientX, y: e.clientY })}
-                                            onMouseMove={(e) => setHover((h) => (h && h.item.id === it.id ? { ...h, x: e.clientX, y: e.clientY } : { item: it, x: e.clientX, y: e.clientY }))}
-                                            onMouseLeave={() => setHover(null)}
+                                            type="button"
+                                            aria-pressed={eq}
+                                            title={`${it.name} — ${eq ? "in loadout" : "buy"}`}
+                                            onClick={() => (canHover ? toggle(it) : (setHover(null), setSelected(it)))}
+                                            onMouseEnter={canHover ? (e) => setHover({ item: it, x: e.clientX, y: e.clientY }) : undefined}
+                                            onMouseMove={canHover ? (e) => setHover((h) => (h && h.item.id === it.id ? { ...h, x: e.clientX, y: e.clientY } : { item: it, x: e.clientX, y: e.clientY })) : undefined}
+                                            onMouseLeave={canHover ? () => setHover(null) : undefined}
+                                            onFocus={(e) => { const r = e.currentTarget.getBoundingClientRect(); setHover({ item: it, x: r.right - 4, y: r.bottom - 8 }); }}
+                                            onBlur={() => setHover(null)}
                                             style={{
                                                 width: 64, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "2px 1px 3px",
                                                 borderRadius: "var(--r-sm)", cursor: "pointer",
@@ -161,13 +188,15 @@ export default function BuyMenu({ items, loadout, onAdd, onRemove, buyingFor, on
                                                 boxShadow: eq ? `0 0 10px -4px ${color}` : "none",
                                                 outline: "none",
                                             }}>
-                                            <div style={{ width: 60, height: 60, borderRadius: "var(--r-sm)", background: dark ? "rgba(255,255,255,0.06)" : "rgba(44,35,22,0.12)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                                            <div style={{ position: "relative", width: 60, height: 60, borderRadius: "var(--r-sm)", background: dark ? "rgba(255,255,255,0.06)" : "rgba(44,35,22,0.12)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
                                                 {it.imageUrl
-                                                    // eslint-disable-next-line @next/next/no-img-element
-                                                    ? <img src={it.imageUrl} alt={it.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                                                    ? <Image src={it.imageUrl} alt={it.name} width={60} height={60} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                                                     : <span style={{ fontSize: 8, color: dark ? color : "var(--parch-ink-soft)", textAlign: "center", lineHeight: 1.2, padding: "0 2px" }}>{it.name}</span>}
+                                                {/* Non-color "owned" indicator (FR-5) so it doesn't rely on hue alone */}
+                                                {eq && <span aria-hidden style={{ position: "absolute", top: 2, right: 2, width: 14, height: 14, borderRadius: "50%", background: "var(--cash-500)", color: "#10160f", fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 1.5px rgba(0,0,0,0.35)" }}>✓</span>}
                                             </div>
-                                            <span style={{ fontSize: 10, lineHeight: 1.25, textAlign: "center", color: dark ? (eq ? color : "var(--text-muted)") : (eq ? color : "var(--parch-ink-soft)"), fontFamily: "var(--font-archivo)" }}>{it.name}</span>
+                                            {/* Label stays contrast-safe; "owned" is shown by the badge + border, not by recoloring text (FR-5) */}
+                                            <span style={{ fontSize: 10, lineHeight: 1.25, textAlign: "center", fontWeight: eq ? 600 : 400, color: dark ? (eq ? "var(--text)" : "var(--text-muted)") : (eq ? "var(--parch-ink)" : "var(--parch-ink-soft)"), fontFamily: "var(--font-archivo)" }}>{it.name}</span>
                                         </button>
                                     );
                                 })}
@@ -178,10 +207,17 @@ export default function BuyMenu({ items, loadout, onAdd, onRemove, buyingFor, on
                 })}
             </div>
 
-            {/* Tooltip */}
+            {/* Hover / focus tooltip (pointer + keyboard) */}
             {hover && <ItemTooltip item={hover.item} x={hover.x} y={hover.y} equipped={isEq(hover.item)}
                 components={upgrades.components.get(hover.item.id) ?? []}
                 buildsInto={upgrades.buildsInto.get(hover.item.id) ?? []} />}
+
+            {/* Tap details sheet (touch) — explicit Buy/Sell */}
+            {selected && <ItemSheet item={selected} equipped={isEq(selected)}
+                components={upgrades.components.get(selected.id) ?? []}
+                buildsInto={upgrades.buildsInto.get(selected.id) ?? []}
+                onBuy={() => { toggle(selected); setSelected(null); }}
+                onClose={() => setSelected(null)} />}
         </section>
     );
 }
@@ -198,7 +234,7 @@ function BuyForToggle({ value, onChange, attackerName, targetName }: { value: "a
                 {opts.map((o) => {
                     const on = value === o.key;
                     return (
-                        <button key={o.key} type="button" onClick={() => onChange(o.key)}
+                        <button key={o.key} type="button" onClick={() => onChange(o.key)} aria-pressed={on} aria-label={`Buy for ${o.role} (${o.name})`}
                             style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 28, padding: "0 12px", cursor: "pointer",
                                 borderRadius: "var(--r-xs)", border: `1px solid ${on ? o.color : "transparent"}`,
                                 background: on ? `color-mix(in srgb, ${o.color} 16%, transparent)` : "transparent",
@@ -248,9 +284,50 @@ function UpgradeLine({ label, names, color }: { label: string; names: string[]; 
     );
 }
 
-function ItemTooltip({ item, x, y, equipped, components, buildsInto }: { item: ItemWithModifiers; x: number; y: number; equipped: boolean; components: string[]; buildsInto: string[] }) {
+// Shared details content — reused by the hover/focus tooltip and the touch sheet.
+function ItemDetailsBody({ item, components, buildsInto, footer }: { item: ItemWithModifiers; components: string[]; buildsInto: string[]; footer?: React.ReactNode }) {
     const c = item.category;
     const effects = parseEffects(item.effects);
+    return (
+        <div style={{ padding: "13px 14px 12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <span style={{ fontFamily: "var(--font-oswald)", fontWeight: 600, fontSize: 17, letterSpacing: "0.01em", color: "var(--text)", lineHeight: 1.1 }}>{item.name}</span>
+                <CostPill cost={item.soulCost} />
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 7 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: CAT_COLOR[c] ?? "var(--text-muted)" }}>{c}</span>
+                <span style={{ fontSize: 11, color: "var(--text-dim)" }}>· Tier {item.tier}</span>
+                {item.isActive && <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "var(--weapon-500)", alignSelf: "center" }}>ACTIVE</span>}
+            </div>
+            {item.description && (
+                <p style={{ marginTop: 9, fontSize: 12, lineHeight: 1.5, color: "var(--text-muted)", whiteSpace: "pre-line" }}>{item.description}</p>
+            )}
+            {item.modifiers.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 11, paddingTop: 11, borderTop: "1px solid var(--border)" }}>
+                    {item.modifiers.map((m) => (
+                        <div key={m.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
+                            <span style={{ color: "var(--text-muted)" }}>{STAT_LABEL[m.statName] ?? m.statName}</span>
+                            <span style={{ fontFamily: "var(--font-numeric)", color: CAT_COLOR[c] ?? "var(--text)" }}>{statLine(m)}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+            {effects.map((e, i) => (
+                <p key={i} style={{ marginTop: 6, fontSize: 12, color: CAT_COLOR[c] ?? "var(--text)", lineHeight: 1.45 }}>{effectLine(e)}</p>
+            ))}
+            {(components.length > 0 || buildsInto.length > 0) && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 11, paddingTop: 11, borderTop: "1px solid var(--border)" }}>
+                    {components.length > 0 && <UpgradeLine label="Upgrades from" names={components} color={CAT_COLOR[c] ?? "var(--text)"} />}
+                    {buildsInto.length > 0 && <UpgradeLine label="Builds into" names={buildsInto} color={CAT_COLOR[c] ?? "var(--text)"} />}
+                </div>
+            )}
+            {footer}
+        </div>
+    );
+}
+
+function ItemTooltip({ item, x, y, equipped, components, buildsInto }: { item: ItemWithModifiers; x: number; y: number; equipped: boolean; components: string[]; buildsInto: string[] }) {
+    const c = item.category;
     const ref = useRef<HTMLDivElement>(null);
     const [pos, setPos] = useState<{ left: number; top: number }>({ left: x + 16, top: y + 12 });
 
@@ -284,39 +361,39 @@ function ItemTooltip({ item, x, y, equipped, components, buildsInto }: { item: I
             border: `1px solid var(--${c}-frame)`, borderRadius: "var(--r-md)", boxShadow: "var(--elev-pop)", overflow: "hidden",
         }}>
             <span style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `var(--${c}-500)` }} />
-            <div style={{ padding: "13px 14px 12px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                    <span style={{ fontFamily: "var(--font-oswald)", fontWeight: 600, fontSize: 17, letterSpacing: "0.01em", color: "var(--text)", lineHeight: 1.1 }}>{item.name}</span>
-                    <CostPill cost={item.soulCost} />
+            <ItemDetailsBody item={item} components={components} buildsInto={buildsInto}
+                footer={<div style={{ marginTop: 11, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: equipped ? "var(--danger-500)" : "var(--cash-500)" }}>{equipped ? "Click to sell" : "Click to buy"}</div>} />
+        </div>
+    );
+}
+
+// Touch path: a modal sheet with full item details and an explicit Buy/Sell button.
+function ItemSheet({ item, equipped, components, buildsInto, onBuy, onClose }: { item: ItemWithModifiers; equipped: boolean; components: string[]; buildsInto: string[]; onBuy: () => void; onClose: () => void }) {
+    const c = item.category;
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [onClose]);
+    return (
+        <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(10,9,8,0.62)", display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 8 }}>
+            <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`${item.name} details`}
+                style={{ position: "relative", width: "100%", maxWidth: 420, background: "linear-gradient(180deg, var(--ink-820), var(--ink-870))", border: `1px solid var(--${c}-frame)`, borderRadius: "var(--r-lg)", boxShadow: "var(--elev-pop)", overflow: "hidden" }}>
+                <span style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `var(--${c}-500)` }} />
+                <div style={{ display: "flex", justifyContent: "flex-end", padding: "7px 7px 0" }}>
+                    <button type="button" onClick={onClose} aria-label="Close details"
+                        style={{ width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--r-sm)", border: "1px solid var(--border-strong)", background: "var(--surface-raised)", color: "var(--text-muted)", cursor: "pointer", fontSize: 16, lineHeight: 1 }}>×</button>
                 </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 7 }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: CAT_COLOR[c] ?? "var(--text-muted)" }}>{c}</span>
-                    <span style={{ fontSize: 11, color: "var(--text-dim)" }}>· Tier {item.tier}</span>
-                    {item.isActive && <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "var(--weapon-500)", alignSelf: "center" }}>ACTIVE</span>}
-                </div>
-                {item.description && (
-                    <p style={{ marginTop: 9, fontSize: 12, lineHeight: 1.5, color: "var(--text-muted)", whiteSpace: "pre-line" }}>{item.description}</p>
-                )}
-                {item.modifiers.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 11, paddingTop: 11, borderTop: "1px solid var(--border)" }}>
-                        {item.modifiers.map((m) => (
-                            <div key={m.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
-                                <span style={{ color: "var(--text-muted)" }}>{STAT_LABEL[m.statName] ?? m.statName}</span>
-                                <span style={{ fontFamily: "var(--font-numeric)", color: CAT_COLOR[c] ?? "var(--text)" }}>{statLine(m)}</span>
-                            </div>
-                        ))}
-                    </div>
-                )}
-                {effects.map((e, i) => (
-                    <p key={i} style={{ marginTop: 6, fontSize: 12, color: CAT_COLOR[c] ?? "var(--text)", lineHeight: 1.45 }}>{effectLine(e)}</p>
-                ))}
-                {(components.length > 0 || buildsInto.length > 0) && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 11, paddingTop: 11, borderTop: "1px solid var(--border)" }}>
-                        {components.length > 0 && <UpgradeLine label="Upgrades from" names={components} color={CAT_COLOR[c] ?? "var(--text)"} />}
-                        {buildsInto.length > 0 && <UpgradeLine label="Builds into" names={buildsInto} color={CAT_COLOR[c] ?? "var(--text)"} />}
-                    </div>
-                )}
-                <div style={{ marginTop: 11, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: equipped ? "var(--danger-500)" : "var(--cash-500)" }}>{equipped ? "Click to sell" : "Click to buy"}</div>
+                <ItemDetailsBody item={item} components={components} buildsInto={buildsInto}
+                    footer={
+                        <button type="button" onClick={onBuy}
+                            style={{ marginTop: 13, width: "100%", height: 42, cursor: "pointer", borderRadius: "var(--r-sm)", fontFamily: "var(--font-oswald)", fontWeight: 600, fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase",
+                                border: `1px solid ${equipped ? "var(--danger-500)" : "var(--cash-500)"}`,
+                                background: `color-mix(in srgb, ${equipped ? "var(--danger-500)" : "var(--cash-500)"} 16%, transparent)`,
+                                color: equipped ? "var(--danger-500)" : "var(--cash-500)" }}>
+                            {equipped ? "Sell item" : `Buy · §${item.soulCost.toLocaleString()}`}
+                        </button>
+                    } />
             </div>
         </div>
     );

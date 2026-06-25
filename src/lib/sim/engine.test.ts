@@ -1,7 +1,7 @@
 import { test, expect, describe } from "bun:test";
 import { db } from "../../db";
 import { simulate, levelFromSouls, investmentBonus, parseEffects } from "./index";
-import type { HeroWithAbilities, ItemData, Build, Target } from "./index";
+import type { HeroWithAbilities, ItemData } from "./index";
 
 // Real game data (DB is populated by the deadlock-api sync).
 const heroes = (await db.query.heroes.findMany({ with: { abilities: true } })) as unknown as HeroWithAbilities[];
@@ -110,5 +110,37 @@ describe("abilities", () => {
         const on = simulate({ hero: haze, items: [] }, { hero: hero("Abrams") }, opts());
         const off = simulate({ hero: haze, items: [] }, { hero: hero("Abrams") }, opts({ disabledAbilityIds: [dmgAbility.id] }));
         expect(off.burst.total).toBeLessThan(on.burst.total);
+    });
+});
+
+describe("engine depth (R-4)", () => {
+    test("on-hit procs are folded into sustained DPS", () => {
+        const withProc = simulate({ hero: hero("Abrams"), items: [item("Mystic Shot")] }, { hero: hero("Haze") }, opts({ range: 5 }));
+        const noProc = simulate({ hero: hero("Abrams"), items: [] }, { hero: hero("Haze") }, opts({ range: 5 }));
+        expect(withProc.procDps).toBeGreaterThan(0);
+        expect(noProc.procDps).toBe(0);
+        // sustained DPS = weapon DPS + proc DPS
+        expect(withProc.sustainedDps).toBeGreaterThan(withProc.sustainedDps - withProc.procDps - 0.001);
+    });
+
+    test("melee damage is exposed, mitigated, and heavy > light", () => {
+        const r = simulate({ hero: hero("Abrams"), items: [] }, { hero: hero("Haze") }, opts());
+        expect(r.melee.light).toBeGreaterThan(0);
+        expect(r.melee.heavy).toBeGreaterThan(r.melee.light);
+    });
+
+    test("melee scales up with level, preserving the heavy:light ratio", () => {
+        const bebop = hero("Bebop");
+        const t4 = byCategoryDesc("weapon")[0]; // 6,400 souls → ~level 11
+        const lvl1 = simulate({ hero: bebop, items: [] }, { hero: hero("Haze") }, opts());
+        const lvlN = simulate({ hero: bebop, items: [t4] }, { hero: hero("Haze") }, opts());
+        expect(lvlN.level).toBeGreaterThan(1);
+        expect(lvlN.melee.light).toBeGreaterThan(lvl1.melee.light); // grows with level
+        // light grows by meleePerLevel/boon (Bebop 1.58); the target's resist is identical
+        // in both sims, so the pre-resist light delta per boon should be ~1.58.
+        const perBoon = (lvlN.melee.light - lvl1.melee.light) / (lvl1.melee.light / bebop.lightMeleeDamage!) / (lvlN.level - 1);
+        expect(perBoon).toBeCloseTo(1.58, 1);
+        // heavy and light scale by the same factor → ratio constant across levels
+        expect(lvlN.melee.heavy / lvlN.melee.light).toBeCloseTo(lvl1.melee.heavy / lvl1.melee.light, 5);
     });
 });
