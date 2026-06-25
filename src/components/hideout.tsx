@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
@@ -8,6 +9,7 @@ import { simulate, levelFromSouls, type SimResult } from "@/lib/sim";
 import { encodeBuild, type ShareState } from "@/lib/build-code";
 import { useIsNarrow } from "@/lib/use-narrow";
 import BuyMenu from "@/components/buy-menu";
+import OnboardingTour, { type TourStep } from "@/components/onboarding-tour";
 
 interface HideoutProps {
     heroes: HeroWithAbilities[];
@@ -26,9 +28,50 @@ const CAT_COLOR: Record<Category, string> = {
     spirit: "var(--spirit-400)",
 };
 
+// First-run walkthrough — each step spotlights a real section by its data-tour id.
+const emph = (s: string) => <strong style={{ color: "var(--text)", fontWeight: 600 }}>{s}</strong>;
+const TOUR_STEPS: TourStep[] = [
+    {
+        target: "versus",
+        title: "Pick a matchup",
+        body: <>Choose an {emph("attacker")} and a {emph("target")} — every number on the page recalculates live. Match the target&apos;s level to yours with the level button, too.</>,
+    },
+    {
+        target: "shop",
+        title: "Buy items",
+        body: <>Add items from the shop; {emph("hover or tap")} any item for its stats. Your {emph("level")} rises with the souls your build costs — there&apos;s no separate slider.</>,
+    },
+    {
+        target: "abilities",
+        title: "Abilities & scaling",
+        body: <>Each ability lists {emph("CD / DMG / DUR / CHG")}. Toggle one to include or exclude it from burst. A {emph("↗")} marks abilities that scale with Spirit Power — those numbers grow as your Spirit does.</>,
+    },
+    {
+        target: "damage",
+        title: "Read the damage",
+        body: <>See {emph("burst")}, sustained DPS, and time-to-kill for the matchup. The {emph("ⓘ")} dots and &ldquo;How this is calculated&rdquo; break down every number.</>,
+    },
+    {
+        target: "progression",
+        title: "Build progression",
+        body: <>Your items become a {emph("buy order")} with the level you&apos;d be at each step. Click a step to preview the build at that point, or drag the arrows to reorder.</>,
+    },
+    {
+        target: "compare",
+        title: "Compare two builds",
+        body: <>Hit {emph("Compare")} to lock build A and edit a second build B side by side. Green/red reads from the build you&apos;re editing — green when it&apos;s ahead, red when it&apos;s behind.</>,
+    },
+    {
+        target: "share",
+        title: "Share your build",
+        body: <>{emph("Share")} copies a link that restores this exact loadout, hero, and scenario. Open the {emph("Build progression")} panel below for a buy order with level checkpoints.</>,
+    },
+];
+
 
 export default function Hideout({ heroes, items, initialHeroId = null, initialBuild = null }: HideoutProps) {
     const narrow = useIsNarrow();
+    const searchParams = useSearchParams();
     // A shared build code (?b=) wins over a single ?hero= portrait link; both are
     // resolved server-side and arrive as props, so the first paint is already correct.
     const startHeroId = initialBuild?.heroId ?? initialHeroId ?? heroes[0]?.id ?? null;
@@ -64,6 +107,10 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     const [checkpoint, setCheckpoint] = useState<number | null>(null);
     const [showProgression, setShowProgression] = useState(true);
     const [showOnboard, setShowOnboard] = useState(false);
+    // True while the tour is showing a demo build we injected (so the shop,
+    // ability damage, and progression panel all have something to spotlight).
+    // We restore the user's empty build when the tour closes.
+    const seededForTour = useRef(false);
     const [toast, setToast] = useState<string | null>(null);
     const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const showToast = (msg: string) => {
@@ -72,12 +119,57 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
         toastTimer.current = setTimeout(() => setToast(null), 2600);
     };
 
-    // Show the first-run intro once, unless it's been dismissed before (localStorage).
+    // A 3-item starter (cheapest of each category) used only to make the tour live.
+    const demoLoadout = () =>
+        (["weapon", "vitality", "spirit"] as const)
+            .map((cat) => items.filter((it) => it.category === cat).sort((x, y) => x.soulCost - y.soulCost)[0]?.id)
+            .filter((id): id is number => id != null);
+
+    const startTour = () => {
+        // Seed a demo build only when starting from a truly empty A loadout, so a
+        // replay over a real build never clobbers it.
+        if (!seededForTour.current && loadoutA.length === 0 && !compareOn) {
+            const demo = demoLoadout();
+            if (demo.length) {
+                setActiveBuild("A");
+                setLoadoutA(demo);
+                seededForTour.current = true;
+            }
+        }
+        setShowProgression(true);
+        setShowOnboard(true);
+    };
+
+    // Tour triggers. Keyed on the URL query so the footer "Replay" link works even
+    // when we're already on /hideout (client nav doesn't remount the component):
+    //   • ?tour=1  → force-start, then strip the param.  (works on every click)
+    //   • otherwise → auto-start once on first visit (localStorage), guarded so a
+    //     later query change can't re-trigger it.
+    const tourInitDone = useRef(false);
     useEffect(() => {
-        try { if (!localStorage.getItem("fairfax_onboarded")) setShowOnboard(true); } catch { /* SSR/denied */ }
-    }, []);
+        try {
+            if (searchParams.get("tour") === "1") {
+                const sp = new URLSearchParams(searchParams.toString());
+                sp.delete("tour");
+                const qs = sp.toString();
+                window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
+                startTour();
+                tourInitDone.current = true;
+                return;
+            }
+            if (!tourInitDone.current && !localStorage.getItem("fairfax_onboarded")) {
+                startTour();
+                tourInitDone.current = true;
+            }
+        } catch { /* SSR/denied */ }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams]);
     const dismissOnboard = () => {
         setShowOnboard(false);
+        if (seededForTour.current) {
+            setLoadoutA([]); // restore the empty build we borrowed for the demo
+            seededForTour.current = false;
+        }
         try { localStorage.setItem("fairfax_onboarded", "1"); } catch { /* denied */ }
     };
 
@@ -231,9 +323,9 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {showOnboard && <OnboardingCard onDismiss={dismissOnboard} />}
+            {showOnboard && <OnboardingTour steps={TOUR_STEPS} onDismiss={dismissOnboard} />}
             {/* VersusBand */}
-            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
+            <div data-tour="versus" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
                 <div style={{ display: "grid", gridTemplateColumns: narrow ? "1fr" : "1fr auto 1fr", gap: narrow ? 14 : 20, alignItems: "stretch", padding: narrow ? 14 : 18 }}>
                     {/* Attacker */}
                     <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: narrow ? "wrap" : "nowrap" }}>
@@ -312,8 +404,8 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                         <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${result.levelProgressPct}%`, background: "linear-gradient(90deg, var(--brass-600), var(--brass-300))" }} />
                     </div>
                     <span style={{ fontSize: 12, color: "var(--text-dim)", whiteSpace: "nowrap", fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums" }}>{result.levelProgressPct}% → Lvl {result.level + 1}</span>
-                    <CompareToggle compareOn={compareOn} view={compareView} onClick={onCompareClick} />
-                    <ShareBuildButton getUrl={buildShareUrl} />
+                    <span data-tour="compare" style={{ display: "inline-flex" }}><CompareToggle compareOn={compareOn} view={compareView} onClick={onCompareClick} /></span>
+                    <span data-tour="share" style={{ display: "inline-flex" }}><ShareBuildButton getUrl={buildShareUrl} /></span>
                 </div>
             </div>
 
@@ -333,15 +425,26 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
             )}
 
             {/* Item shop */}
-            <BuyMenu items={items} loadout={activeLoadout} onAdd={activeAdd} onRemove={activeRemove}
-                buyingFor={buyingFor} onBuyingForChange={setBuyingFor}
-                attackerName={hero.name} targetName={target.name} />
+            <div data-tour="shop">
+                <BuyMenu items={items} loadout={activeLoadout} onAdd={activeAdd} onRemove={activeRemove}
+                    buyingFor={buyingFor} onBuyingForChange={setBuyingFor}
+                    attackerName={hero.name} targetName={target.name} />
+            </div>
 
             {/* Abilities + Damage calculator */}
             <div style={{ display: "grid", gridTemplateColumns: narrow ? "1fr" : "1fr 1.4fr", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", boxShadow: "inset 0 1px 0 var(--line-soft)" }}>
                 {/* Abilities */}
-                <div style={{ padding: 18 }}>
+                <div data-tour="abilities" style={{ padding: 18 }}>
                     <SectionHead title="Abilities" />
+                    {result.abilities.length > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 10px 4px", marginBottom: 2 }}>
+                            <span style={{ flex: 1 }} />
+                            <AbilityColLabel w={40} title="Cooldown">CD</AbilityColLabel>
+                            <AbilityColLabel w={52} title="Damage (or damage/sec for DoT)">DMG</AbilityColLabel>
+                            {!narrow && <AbilityColLabel w={44} title="Active duration">DUR</AbilityColLabel>}
+                            {!narrow && <AbilityColLabel w={36} title="Charges">CHG</AbilityColLabel>}
+                        </div>
+                    )}
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         {result.abilities.length === 0
                             ? <p style={{ fontSize: 13, color: "var(--text-dim)" }}>No abilities recorded for this hero yet.</p>
@@ -374,7 +477,13 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                                         <span style={{ fontFamily: "var(--font-numeric)", fontSize: 12, color: "var(--text-dim)", width: 40, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                                             {a.cooldown ? `${a.cooldown}s` : "—"}
                                         </span>
-                                        <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 13, color: c ? CAT_COLOR[c] : "var(--text-dim)", width: 52, textAlign: "right" }}>{a.display}</span>
+                                        <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 2, fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 13, color: c ? CAT_COLOR[c] : "var(--text-dim)", width: 52, textAlign: "right" }}
+                                            title={a.scalesWithSpirit ? `Scales with Spirit Power${a.damageScalePerSpirit > 0 ? ` (+${a.damageScalePerSpirit} damage per Spirit)` : ""} — this number reflects your current Spirit.` : undefined}>
+                                            {a.display}
+                                            {a.scalesWithSpirit && a.display !== "—" && <span style={{ fontSize: 9, color: "var(--spirit-400)", lineHeight: 1 }}>↗</span>}
+                                        </span>
+                                        {!narrow && <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 12, color: "var(--text-dim)", width: 44, textAlign: "right" }}>{a.duration ? `${a.duration}s` : "—"}</span>}
+                                        {!narrow && <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 12, color: "var(--text-dim)", width: 36, textAlign: "right" }} title={a.charges && a.chargeCooldown ? `${a.charges} charges · ${a.chargeCooldown}s between charges` : undefined}>{a.charges && a.charges > 1 ? `×${a.charges}` : "—"}</span>}
                                     </div>
                                 );
                             })}
@@ -382,7 +491,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                 </div>
 
                 {/* Damage calculator */}
-                <div style={{ padding: 18, borderLeft: narrow ? "none" : "1px solid var(--border)", borderTop: narrow ? "1px solid var(--border)" : "none" }}>
+                <div data-tour="damage" style={{ padding: 18, borderLeft: narrow ? "none" : "1px solid var(--border)", borderTop: narrow ? "1px solid var(--border)" : "none" }}>
                     <SectionHead title="Damage" />
                     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
                         <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)", whiteSpace: "nowrap" }}>Range</span>
@@ -460,6 +569,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
 
             {/* Build progression — suggested buy order (FR-1) */}
             {loadout.length > 0 && (
+                <div data-tour="progression">
                 <ProgressionPanel
                     steps={loadout.map((id) => items.find((i) => i.id === id)).filter(Boolean) as ItemWithModifiers[]}
                     checkpoint={cp}
@@ -471,6 +581,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                     onToggle={() => setShowProgression((v) => !v)}
                     buildLabel={compareOn ? activeBuild : null}
                 />
+                </div>
             )}
 
             {/* Merge toast (2.3) + onboarding/glossary use a shared aria-live region */}
@@ -535,13 +646,16 @@ function BuildTabs({ active, onActive }: { active: "A" | "B"; onActive: (b: "A" 
     );
 }
 
-function CompareRow({ m, a, b, fmt, narrow }: { m: (typeof COMPARE_METRICS)[number]; a: SimResult; b: SimResult; fmt: (n: number) => string; narrow: boolean }) {
+function CompareRow({ m, a, b, active, fmt, narrow }: { m: (typeof COMPARE_METRICS)[number]; a: SimResult; b: SimResult; active: "A" | "B"; fmt: (n: number) => string; narrow: boolean }) {
     const av = m.get(a);
     const bv = m.get(b);
     const fmtV = (v: number | null) => (v == null ? "—" : (m.dec ? v.toFixed(m.dec) : fmt(v)) + (m.unit ?? ""));
     const delta = av == null || bv == null ? null : bv - av;
+    // `improved` = build B is the better one (drives bar geometry — bar points at the winner).
     const improved = delta == null || delta === 0 ? null : m.betterLow ? delta < 0 : delta > 0;
-    const dColor = improved == null ? "var(--text-dim)" : improved ? "var(--cash-500)" : "var(--danger-500)";
+    // Colour reads from the build you're editing: green when the active build is ahead, red when behind.
+    const activeAhead = improved == null ? null : (improved ? "B" : "A") === active;
+    const dColor = activeAhead == null ? "var(--text-dim)" : activeAhead ? "var(--cash-500)" : "var(--danger-500)";
     const pct = av != null && bv != null && av !== 0 ? (bv - av) / Math.abs(av) : 0;
     const half = Math.min(Math.abs(pct), 1) * 50; // each side of the centre line = 50% of the track
     const sign = delta == null || delta === 0 ? "" : delta > 0 ? "+" : "−";
@@ -654,8 +768,10 @@ function PreviewStat({ label, value }: { label: string; value: string }) {
 }
 
 function ComparePanel({ view, resultA, resultB, active, onActive, onToggleView, onExit, fmt, narrow }: { view: "expanded" | "min"; resultA: SimResult; resultB: SimResult; active: "A" | "B"; onActive: (b: "A" | "B") => void; onToggleView: () => void; onExit: () => void; fmt: (n: number) => string; narrow: boolean }) {
-    const burstDelta = resultB.burst.total - resultA.burst.total;
-    const dColor = burstDelta === 0 ? "var(--text-dim)" : burstDelta > 0 ? "var(--cash-500)" : "var(--danger-500)";
+    // Burst delta from the active build's perspective: positive when the build
+    // you're editing has more burst — drives both the sign and the colour.
+    const activeBurstDelta = (resultB.burst.total - resultA.burst.total) * (active === "B" ? 1 : -1);
+    const dColor = activeBurstDelta === 0 ? "var(--text-dim)" : activeBurstDelta > 0 ? "var(--cash-500)" : "var(--danger-500)";
 
     if (view === "min") {
         return (
@@ -665,7 +781,7 @@ function ComparePanel({ view, resultA, resultB, active, onActive, onToggleView, 
                 <span style={{ fontSize: 11.5, color: "var(--text-muted)" }}>Editing {active}</span>
                 <span style={{ flex: 1, minWidth: 8 }} />
                 <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 12.5, color: dColor }}>
-                    burst {burstDelta >= 0 ? "+" : "−"}{fmt(Math.abs(burstDelta))}
+                    burst {activeBurstDelta >= 0 ? "+" : "−"}{fmt(Math.abs(activeBurstDelta))}
                 </span>
                 <MiniButton onClick={onToggleView} label="▴ Expand" title="Expand the comparison" />
                 <MiniButton onClick={onExit} label="✕" title="Exit compare (discards build B)" />
@@ -694,10 +810,10 @@ function ComparePanel({ view, resultA, resultB, active, onActive, onToggleView, 
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "var(--brass-300)", textAlign: "right" }}>B</span>
                     <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)", textAlign: "right" }}>Δ</span>
                 </div>
-                {offense.map((m) => <CompareRow key={m.label} m={m} a={resultA} b={resultB} fmt={fmt} narrow={narrow} />)}
+                {offense.map((m) => <CompareRow key={m.label} m={m} a={resultA} b={resultB} active={active} fmt={fmt} narrow={narrow} />)}
                 <div style={{ marginTop: 10, marginBottom: 2, fontSize: 10, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-dim)" }}>Defense · extra stats</div>
-                {defense.map((m) => <CompareRow key={m.label} m={m} a={resultA} b={resultB} fmt={fmt} narrow={narrow} />)}
-                <p style={{ marginTop: 12, fontSize: 11, color: "var(--text-dim)" }}>Editing build <strong style={{ color: "var(--text-muted)" }}>{active}</strong> — switch tabs to edit the other. Green favours B, red favours A. Both builds share the same hero, target, and scenario.</p>
+                {defense.map((m) => <CompareRow key={m.label} m={m} a={resultA} b={resultB} active={active} fmt={fmt} narrow={narrow} />)}
+                <p style={{ marginTop: 12, fontSize: 11, color: "var(--text-dim)" }}>Editing build <strong style={{ color: "var(--text-muted)" }}>{active}</strong> — switch tabs to edit the other. <strong style={{ color: "var(--cash-500)" }}>Green</strong> = the build you&apos;re editing ({active}) is ahead; <strong style={{ color: "var(--danger-500)" }}>red</strong> = it&apos;s behind. Both builds share the same hero, target, and scenario.</p>
             </div>
         </div>
     );
@@ -732,25 +848,6 @@ function InfoDot({ tip, align = "left" }: { tip: string; align?: "left" | "right
 }
 
 // First-run intro card — dismissible, remembered in localStorage (see Hideout).
-function OnboardingCard({ onDismiss }: { onDismiss: () => void }) {
-    const dot = <span style={{ color: "var(--brass-400)", marginRight: 8, fontSize: 8 }}>◆</span>;
-    const em = (s: string) => <strong style={{ color: "var(--text)", fontWeight: 600 }}>{s}</strong>;
-    return (
-        <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 10, padding: "16px 18px", borderRadius: "var(--r-lg)", background: "linear-gradient(180deg, color-mix(in srgb, var(--brass-500) 8%, var(--surface)), var(--surface))", border: "1px solid var(--border-brass)" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                <span style={{ fontFamily: "var(--font-oswald)", fontWeight: 600, fontSize: 15, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--brass-300)" }}>New here? The gist</span>
-                <button type="button" onClick={onDismiss} aria-label="Dismiss intro"
-                    style={{ width: 24, height: 24, borderRadius: "var(--r-sm)", border: "1px solid var(--border-strong)", background: "var(--surface-raised)", color: "var(--text-muted)", cursor: "pointer", fontSize: 15, lineHeight: 1, flexShrink: 0 }}>×</button>
-            </div>
-            <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6, fontSize: 13, lineHeight: 1.5, color: "var(--text-muted)" }}>
-                <li>{dot}Pick an {em("attacker")} and a {em("target")} — every number recalculates live.</li>
-                <li>{dot}Buy items in the shop below; {em("hover or tap")} any item for its stats. Your level rises with the souls you spend.</li>
-                <li>{dot}Read the {em("burst")}, sustained DPS, and time-to-kill — the {em("ⓘ")} icons and “How this is calculated” explain each number.</li>
-            </ul>
-        </div>
-    );
-}
-
 function ShareBuildButton({ getUrl }: { getUrl: () => string }) {
     // "idle" → ready · "copied" → clipboard write succeeded · "fallback" → clipboard
     // unavailable (insecure context / denied), so we surface a selectable field instead.
@@ -907,6 +1004,12 @@ function HeroSelect({ heroes, value, onChange, accentColor, align = "left" }: { 
                 {heroes.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
             </select>
         </div>
+    );
+}
+
+function AbilityColLabel({ w, title, children }: { w: number; title: string; children: React.ReactNode }) {
+    return (
+        <span title={title} style={{ width: w, textAlign: "right", fontSize: 9, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)" }}>{children}</span>
     );
 }
 

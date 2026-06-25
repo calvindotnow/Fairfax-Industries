@@ -46,6 +46,9 @@ export default async function RootLayout({
             <Link href="/methodology" style={{ color: "var(--brass-400)", textDecoration: "none", borderBottom: "1px solid var(--line-brass)" }}>
               How the numbers are calculated
             </Link>{" · "}
+            <Link href="/hideout?tour=1" style={{ color: "var(--brass-400)", textDecoration: "none", borderBottom: "1px solid var(--line-brass)" }}>
+              Replay the walkthrough
+            </Link>{" · "}
             Fairfax Industries is a community theorycrafting tool for Deadlock.
             Not affiliated with or endorsed by Valve Corporation. Game data and
             imagery belong to Valve.

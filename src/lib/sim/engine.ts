@@ -9,6 +9,8 @@
 import type {
     AbilityData,
     AbilityRow,
+    AbilityScaling,
+    AbilityScalingInfo,
     Build,
     BurstResult,
     ComputedStats,
@@ -191,6 +193,32 @@ function abilityDamageType(a: AbilityData): "spirit" | "weapon" | "utility" {
     return "utility";
 }
 
+/**
+ * Resolve an ability's Spirit scaling: the damage coefficient (from the
+ * `spiritScaling` column) plus the range/duration flags (parsed from the
+ * `properties` JSON). Shared by the engine and the heroes detail page so the
+ * "scales with Spirit" derivation lives in exactly one place.
+ */
+export function deriveAbilityScaling(
+    a: Pick<AbilityData, "properties" | "spiritScaling">
+): AbilityScalingInfo {
+    let flags: AbilityScaling = {};
+    if (a.properties) {
+        try {
+            flags = JSON.parse(a.properties) as AbilityScaling;
+        } catch { /* malformed — ignore */ }
+    }
+    const damageScalePerSpirit = a.spiritScaling ?? 0;
+    const rangeScalesWithSpirit = !!flags.rangeScalesWithSpirit;
+    const durationScalesWithSpirit = !!flags.durationScalesWithSpirit;
+    return {
+        damageScalePerSpirit,
+        rangeScalesWithSpirit,
+        durationScalesWithSpirit,
+        scalesWithSpirit: damageScalePerSpirit > 0 || rangeScalesWithSpirit || durationScalesWithSpirit,
+    };
+}
+
 function buildAbilityRows(
     abilities: AbilityData[],
     heroStats: ComputedStats,
@@ -204,15 +232,22 @@ function buildAbilityRows(
                 ? 1 - (targetStats.spiritResist ?? 0) / 100
                 : 1 - (targetStats.bulletResist ?? 0) / 100;
         const isDot = (a.dotDps ?? 0) > 0;
+        const { damageScalePerSpirit, scalesWithSpirit } = deriveAbilityScaling(a);
         const base = {
             id: a.id,
             name: a.name,
             type: a.type,
             imageUrl: a.imageUrl,
             cooldown: a.cooldown,
+            range: a.range,
+            duration: a.duration,
+            charges: a.charges,
+            chargeCooldown: a.chargeCooldown,
             damageType: type,
             isUltimate: a.type === "ultimate",
             isDot,
+            scalesWithSpirit,
+            damageScalePerSpirit,
         };
         if (isDot) {
             // Channeled/burn DoT — a per-second rate, not an instant-burst hit.

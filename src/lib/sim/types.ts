@@ -35,12 +35,36 @@ export interface AbilityData {
     name: string;
     type: string; // "signature" | "ultimate" | ...
     cooldown?: number | null;
+    range?: number | null;
+    duration?: number | null;
+    charges?: number | null;
+    chargeCooldown?: number | null;
     baseDamage?: number | null;
     spiritScaling?: number | null;
     dotDps?: number | null;
     dotDuration?: number | null;
     damageKind?: string | null; // "spirit" | "weapon" | null in practice
     imageUrl?: string | null;
+    // JSON string of scaling metadata, e.g.
+    // { damageScalePerSpirit, rangeScalesWithSpirit, durationScalesWithSpirit }
+    properties?: string | null;
+}
+
+/** Parsed shape of AbilityData.properties — flags for the dimensions that scale
+ *  with Spirit Power. The per-Spirit damage coefficient itself lives in the
+ *  dedicated `spiritScaling` column (single source of truth), not here. */
+export interface AbilityScaling {
+    rangeScalesWithSpirit?: boolean;
+    durationScalesWithSpirit?: boolean;
+}
+
+/** Resolved scaling for an ability: the damage coefficient plus the dimensions
+ *  that grow with Spirit Power, and whether anything scales at all. */
+export interface AbilityScalingInfo {
+    damageScalePerSpirit: number;
+    rangeScalesWithSpirit: boolean;
+    durationScalesWithSpirit: boolean;
+    scalesWithSpirit: boolean;
 }
 
 export interface HeroData {
@@ -120,9 +144,17 @@ export interface AbilityRow {
     type: string;
     imageUrl?: string | null;
     cooldown?: number | null;
+    range?: number | null;
+    duration?: number | null;
+    charges?: number | null;
+    chargeCooldown?: number | null;
     damageType: "weapon" | "spirit" | "utility";
     isUltimate: boolean;
     isDot: boolean;
+    /** True when damage, range, or duration scales with Spirit Power. */
+    scalesWithSpirit: boolean;
+    /** Per-Spirit damage coefficient (0 when damage doesn't scale). */
+    damageScalePerSpirit: number;
     /** Display string for the table (e.g. "132" or "95/s" or "—"). */
     display: string;
     /** Contribution to the instant burst (0 for DoT/utility). */

@@ -21,6 +21,26 @@ const FETCH_OPTS: RequestInit = {
 const num = (v: any): number | null =>
     typeof v === "number" ? v : typeof v?.value === "number" ? v.value : null;
 
+// Parse a property value that may be a unit-suffixed string ("10m", "5", "-1.0")
+// or a {value} wrapper. Returns null for non-finite results.
+const pnum = (v: unknown): number | null => {
+    const raw = v && typeof v === "object" && "value" in v ? (v as { value: unknown }).value : v;
+    if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+    if (typeof raw === "string") {
+        const n = parseFloat(raw);
+        return Number.isFinite(n) ? n : null;
+    }
+    return null;
+};
+// First positive (> 0) parsed value among the candidates, else null.
+const firstPos = (...vals: unknown[]): number | null => {
+    for (const v of vals) {
+        const n = pnum(v);
+        if (n != null && n > 0) return n;
+    }
+    return null;
+};
+
 // Source engine: ~52.49 units per meter
 const UNITS_PER_METER = 52.49;
 
@@ -247,7 +267,9 @@ async function main() {
                 spiritPower: 0,
                 spiritResist: num(s.tech_armor_damage_reduction) ?? 0, // base spirit resist (Pocket -15, Lash +10)
                 moveSpeed: num(s.max_move_speed) ?? 7,
-                sprintSpeed: num(s.sprint_speed) ?? 11,
+                // API `sprint_speed` is the *bonus* added on top of max_move_speed (~1.6),
+                // not the absolute sprint speed. Store the absolute value so sprint > move.
+                sprintSpeed: (num(s.max_move_speed) ?? 7) + (num(s.sprint_speed) ?? 0),
                 stamina: num(s.stamina) ?? 3,
                 falloffStart: num(gun.damage_falloff_start_range) != null
                     ? Math.round((num(gun.damage_falloff_start_range)! / UNITS_PER_METER) * 10) / 10
@@ -306,6 +328,33 @@ async function main() {
             }
             const hasDamage = (num(direct) ?? 0) > 0 || dotDps > 0;
             const damageKind = hasDamage ? (isTech ? "spirit" : "weapon") : null;
+
+            // Display-only fields the damage engine doesn't need but the UI does.
+            // Values arrive as unit-suffixed strings ("10m", "5", "-1.0").
+            const range = firstPos(p.AbilityCastRange, p.Radius);
+            // General ability duration (stun/zone/channel), independent of the DoT path.
+            const duration = firstPos(p.AbilityDuration, p.AbilityChannelTime);
+            const chargesRaw = pnum(p.AbilityCharges); // "0"/-1 = no charges
+            const charges = chargesRaw != null && chargesRaw > 1 ? Math.round(chargesRaw) : null;
+            const chargeCooldown = charges != null ? firstPos(p.AbilityCooldownBetweenCharge) : null;
+
+            // Scaling metadata for the UI. The damage coefficient is stored in the
+            // dedicated `spiritScaling` column; the `properties` blob only carries the
+            // range/duration scale flags (those dimensions expose just a scale *type*,
+            // ETechRange/ETechDuration, not a per-ability number). Only claim a dimension
+            // scales when we actually surface its base value, so the UI tag never
+            // references a stat the user can't see.
+            const scaleTypeOf = (prop: unknown): string => {
+                const sf = (prop as { scale_function?: { specific_stat_scale_type?: string; scaling_stats?: string[] } } | undefined)?.scale_function;
+                if (!sf) return "";
+                return [sf.specific_stat_scale_type, ...(sf.scaling_stats ?? [])].filter(Boolean).join(",");
+            };
+            const rangeScalesWithSpirit = range != null && /ETechRange/.test(scaleTypeOf(p.AbilityCastRange) + scaleTypeOf(p.Radius));
+            const durationScalesWithSpirit = duration != null && /ETechDuration/.test(scaleTypeOf(p.AbilityDuration) + scaleTypeOf(p.AbilityChannelTime));
+            const scalingJson = rangeScalesWithSpirit || durationScalesWithSpirit
+                ? JSON.stringify({ rangeScalesWithSpirit, durationScalesWithSpirit })
+                : null;
+
             db.insert(abilities)
                 .values({
                     heroId: hero.id,
@@ -313,12 +362,17 @@ async function main() {
                     description: null,
                     type,
                     cooldown: num(p.AbilityCooldown),
+                    range,
+                    duration,
+                    charges,
+                    chargeCooldown,
                     baseDamage: num(direct),
                     spiritScaling: isTech ? scale : 0,
                     dotDps,
                     dotDuration,
                     damageKind,
                     imageUrl: ab.image_webp || ab.image || null,
+                    properties: scalingJson,
                 })
                 .run();
             abilityCount++;

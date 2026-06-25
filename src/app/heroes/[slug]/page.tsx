@@ -4,6 +4,7 @@ import Image from "next/image";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { heroSlug } from "@/lib/slug";
+import { deriveAbilityScaling } from "@/lib/sim";
 import type { HeroWithAbilities } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -131,10 +132,17 @@ export default async function HeroDetailPage({
                   : (a.dotDps ?? 0) > 0
                     ? `${fmt(a.dotDps!)}/s`
                     : null;
+              const { damageScalePerSpirit, scalesWithSpirit } = deriveAbilityScaling(a);
               const abilityStats = [
                 a.cooldown ? { label: "Cooldown", value: `${fmt(a.cooldown)}s` } : null,
-                a.range ? { label: "Range", value: fmt(a.range) } : null,
+                a.range ? { label: "Range", value: `${fmt(a.range)} m` } : null,
                 a.duration ? { label: "Duration", value: `${fmt(a.duration)}s` } : null,
+                a.charges && a.charges > 1
+                  ? {
+                      label: "Charges",
+                      value: `×${a.charges}${a.chargeCooldown ? ` · ${fmt(a.chargeCooldown)}s` : ""}`,
+                    }
+                  : null,
                 damage ? { label: "Damage", value: damage } : null,
               ].filter((x): x is { label: string; value: string } => x !== null);
 
@@ -174,6 +182,19 @@ export default async function HeroDetailPage({
                           </div>
                         ))}
                       </div>
+                    ) : null}
+                    {scalesWithSpirit ? (
+                      <p
+                        className="mt-2.5 inline-flex items-center gap-1 text-[11px]"
+                        style={{ color: "var(--spirit-400)" }}
+                        title="This ability grows with Spirit Power, which rises as you level and buy spirit items."
+                      >
+                        <span aria-hidden>↗</span>
+                        Scales with Spirit Power
+                        {damageScalePerSpirit > 0
+                          ? ` · +${damageScalePerSpirit} damage per Spirit`
+                          : ""}
+                      </p>
                     ) : null}
                   </div>
                 </div>

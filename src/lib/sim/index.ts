@@ -4,7 +4,7 @@
  * UI should import from here: `import { simulate, parseEffects } from "@/lib/sim"`.
  * The engine is pure TypeScript with no React or database dependencies.
  */
-export { simulate, parseEffects, calculateStats, calculateAbilityDamage, applyLevel } from "./engine";
+export { simulate, parseEffects, calculateStats, calculateAbilityDamage, applyLevel, deriveAbilityScaling } from "./engine";
 export {
     SOULS_LEVEL_TABLE,
     MAX_LEVEL,
