@@ -1,0 +1,272 @@
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Archivo:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-archivo);
+  --font-display: var(--font-oswald);
+  --font-mono: ui-monospace, SFMono-Regular, monospace;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 3px);
+  --radius-md: calc(var(--radius) - 1px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-weapon: var(--weapon);
+  --color-vitality: var(--vitality);
+  --color-spirit: var(--spirit);
+}
+
+/* ─── Fairfax Industries — warm matte noir ─────────────────────────────────── */
+:root {
+  --radius: 0.5rem;
+
+  /* Warm charcoal base, never pure black */
+  --background: #1a1917;
+  --foreground: #e9e5dc;
+
+  --card: #211f1c;
+  --card-foreground: #e9e5dc;
+  --popover: #211f1c;
+  --popover-foreground: #e9e5dc;
+
+  /* Tarnished brass — the single brand accent */
+  --primary: #c89b5c;
+  --primary-foreground: #1a1917;
+
+  --secondary: #2a2824;
+  --secondary-foreground: #d9d4ca;
+
+  --muted: #232220;
+  --muted-foreground: #918c81;
+
+  /* Muted patina green, used sparingly */
+  --accent: #8aa46b;
+  --accent-foreground: #1a1917;
+
+  --destructive: #c0564a;
+  --border: rgba(233, 229, 220, 0.10);
+  --input: #262320;
+  --ring: #c89b5c;
+
+  /* Deadlock item categories — desaturated */
+  --weapon: #d98841;
+  --vitality: #7faf5a;
+  --spirit: #9b8ad6;
+
+  /* ---- Design system tokens ---- */
+  --font-oswald: 'Oswald', 'Arial Narrow', sans-serif;
+  --font-archivo: 'Archivo', system-ui, sans-serif;
+  --font-numeric: 'Oswald', 'Arial Narrow', sans-serif;
+
+  /* Ink scale */
+  --ink-950: #141311;
+  --ink-900: #1a1917;
+  --ink-870: #1d1b18;
+  --ink-850: #1f1d1a;
+  --ink-820: #211f1c;
+  --ink-780: #262320;
+  --ink-740: #2b2824;
+  --ink-700: #34302b;
+  --ink-650: #3d3832;
+  --ink-600: #4a443c;
+
+  /* Paper scale */
+  --paper-50:  #e9e5dc;
+  --paper-400: #918c81;
+  --paper-500: #75716a;
+
+  /* Brass */
+  --brass-200: #f0d8ab;
+  --brass-300: #e4c389;
+  --brass-400: #d6ab6e;
+  --brass-500: #c89b5c;
+  --brass-600: #a87f45;
+  --brass-700: #846032;
+  --brass-glow: rgba(200,155,92,0.22);
+
+  /* Parchment */
+  --parch-50:  #f3ead2;
+  --parch-100: #ece0c2;
+  --parch-200: #e0d1ab;
+  --parch-300: #d3c197;
+  --parch-400: #c2ad7e;
+  --parch-line:     #9a8254;
+  --parch-frame:    #4a3d24;
+  --parch-ink:      #2c2316;
+  --parch-ink-soft: #6a5634;
+
+  /* Cash/souls */
+  --cash-500:      #6fae5e;
+  --cash-pill-bg:  #2c4a31;
+  --cash-pill-fg:  #ece3c7;
+  --cash-pill-bd:  #1d3322;
+
+  /* Category */
+  --weapon-500:    #d98841;
+  --weapon-400:    #e49b5c;
+  --weapon-600:    #b76a2c;
+  --weapon-tint:   rgba(217,136,65,0.13);
+  --weapon-frame:  rgba(217,136,65,0.42);
+
+  --vitality-500:  #7faf5a;
+  --vitality-400:  #97c172;
+  --vitality-600:  #648f43;
+  --vitality-tint: rgba(127,175,90,0.13);
+  --vitality-frame:rgba(127,175,90,0.42);
+
+  --spirit-500:    #9b8ad6;
+  --spirit-400:    #b3a4e4;
+  --spirit-600:    #7d6cbb;
+  --spirit-tint:   rgba(155,138,214,0.14);
+  --spirit-frame:  rgba(155,138,214,0.45);
+
+  --danger-500:    #c5503e;
+
+  /* Hairlines */
+  --line:        rgba(233,229,220,0.10);
+  --line-soft:   rgba(233,229,220,0.06);
+  --line-strong: rgba(233,229,220,0.16);
+  --line-brass:  rgba(200,155,92,0.30);
+  --border-strong: var(--line-strong);
+  --border-brass:  var(--line-brass);
+
+  /* Surfaces */
+  --bg:            var(--ink-900);
+  --surface:       var(--ink-820);
+  --surface-raised:var(--ink-780);
+  --surface-hover: var(--ink-740);
+  --surface-well:  var(--ink-870);
+
+  /* Text aliases */
+  --text:     var(--paper-50);
+  --text-muted: var(--paper-400);
+  --text-dim:   var(--paper-500);
+
+  /* Radii */
+  --r-xs:  3px;
+  --r-sm:  5px;
+  --r-md:  8px;
+  --r-lg:  12px;
+  --r-xl:  16px;
+  --r-pill: 999px;
+
+  /* Layout */
+  --page-max: 1240px;
+  --nav-h:    60px;
+
+  /* Textures */
+  --board-bg:
+    radial-gradient(130% 90% at 50% -8%, #2a261c 0%, #201d15 48%, #16140e 100%);
+  --tex-parchment:
+    radial-gradient(120% 140% at 85% 110%, rgba(74,61,36,0.30), transparent 55%),
+    radial-gradient(90% 120% at 6% -10%, rgba(255,247,222,0.5), transparent 45%),
+    linear-gradient(160deg, var(--parch-300), var(--parch-400));
+
+  /* Elevation */
+  --elev-card:  inset 0 1px 0 rgba(233,229,220,0.05), 0 1px 2px rgba(0,0,0,0.35);
+  --elev-pop:   inset 0 1px 0 rgba(233,229,220,0.08), 0 18px 50px -16px rgba(0,0,0,0.72);
+}
+
+html {
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    background-image: radial-gradient(1100px 520px at 50% -8%, rgba(200, 155, 92, 0.06), transparent 62%);
+    color: var(--foreground);
+    font-family: var(--font-archivo), var(--font-inter), system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "liga" 1, "calt" 1;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-oswald), 'Arial Narrow', sans-serif;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--foreground);
+  }
+
+  ::selection {
+    background: rgba(200, 155, 92, 0.28);
+    color: #fff;
+  }
+}
+
+/* ─── Quiet, intentional utilities ─────────────────────────────────────────── */
+.surface {
+  background: rgba(233, 229, 220, 0.035);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.surface-2 {
+  background: rgba(233, 229, 220, 0.06);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.hairline {
+  border-top: 1px solid var(--border);
+}
+
+.overline {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* Legacy class shims — keep old pages from looking broken */
+.glass {
+  background: rgba(233, 229, 220, 0.035);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.industrial-border {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.font-display {
+  font-family: var(--font-oswald), 'Arial Narrow', sans-serif;
+}
+
+/* ─── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(233, 229, 220, 0.12); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(233, 229, 220, 0.22); }
+
+/* ─── Form controls ────────────────────────────────────────────────────────── */
+select option {
+  background: var(--card);
+  color: var(--foreground);
+}
+
+input[type="range"] {
+  accent-color: var(--primary);
+}
