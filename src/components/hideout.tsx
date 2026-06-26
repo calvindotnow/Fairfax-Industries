@@ -7,6 +7,7 @@ import Link from "next/link";
 import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
 import { simulate, levelFromSouls, parseEffects, deriveAbilityScaling, sumPercentModifiers, type SimResult } from "@/lib/sim";
 import { encodeBuild, type ShareState } from "@/lib/build-code";
+import { defaultShotsForFireRate, secondsOfFire } from "@/lib/hideout-utils";
 import { useIsNarrow } from "@/lib/use-narrow";
 import BuyMenu from "@/components/buy-menu";
 import OnboardingTour, { type TourStep } from "@/components/onboarding-tour";
@@ -93,6 +94,8 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     const [range, setRange] = useState(initialBuild?.range ?? 25);
     const [shots, setShots] = useState(initialBuild?.shots ?? 8);
     const [headshots, setHeadshots] = useState(initialBuild?.headshots ?? 0);
+    // A shared ?b= build carries an explicit shots count → treat as user-set so links render as shared.
+    const [shotsTouched, setShotsTouched] = useState(initialBuild?.shots != null);
     const [accuracy, setAccuracy] = useState(100); // % of shots that land — scales sustained DPS
     const [headshotPct, setHeadshotPct] = useState(0); // % of landed shots that hit the head (sustained)
     // Combat-scenario toggles — feed conditional item effects (Burst Fire, resist debuffs, actives).
@@ -246,6 +249,16 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     // The VS band + damage panel reflect whichever build you're actively editing.
     const equipped = activeBuild === "B" ? equippedB : equippedA;
     const result = activeBuild === "B" ? resultB : resultA;
+    // Default the burst window to ~1.5s of fire for the *current* build (items included),
+    // until the user edits Shots. Buying a fire-rate item bumps the default up.
+    const equippedFireRate = result?.heroStats.weaponFireRate ?? 0;
+    useEffect(() => {
+      if (shotsTouched || equippedFireRate <= 0) return;
+      const def = defaultShotsForFireRate(equippedFireRate);
+      setShots(def);
+      setHeadshots((h) => Math.min(h, def));
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [equippedFireRate, shotsTouched]);
     // Equipped stacking items + each one's own max (drives the per-item Stacks chips).
     // `modeled` = at least one stacking effect maps to a stat the engine applies.
     const stackingItems = useMemo(
@@ -679,8 +692,11 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                             </div>
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                            <NumberField label="Shots" value={shots} onChange={(v) => { setShots(v); setHeadshots((h) => Math.min(h, v)); }} min={0} max={50} />
+                            <NumberField label="Shots" value={shots} onChange={(v) => { setShots(v); setHeadshots((h) => Math.min(h, v)); setShotsTouched(true); }} min={0} max={50} />
                             <NumberField label="Headshots" value={headshots} onChange={setHeadshots} min={0} max={shots} />
+                            <span style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-numeric)", whiteSpace: "nowrap", alignSelf: "center" }}>
+                              ≈{secondsOfFire(shots, equippedFireRate).toFixed(1)}s of fire
+                            </span>
                         </div>
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
