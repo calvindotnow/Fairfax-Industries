@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -10,6 +10,7 @@ import { encodeBuild, type ShareState } from "@/lib/build-code";
 import { useIsNarrow } from "@/lib/use-narrow";
 import BuyMenu from "@/components/buy-menu";
 import OnboardingTour, { type TourStep } from "@/components/onboarding-tour";
+import RollingNumber from "@/components/rolling-number";
 import SlotText from "@/components/slot-text";
 
 interface HideoutProps {
@@ -673,7 +674,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                                 <InfoDot tip="Everything that lands in one combo window: weapon shots + headshots, ability damage (ults off by default), a 0.5s slice of any DoT, and on-hit procs." />
                             </div>
                             <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-                                <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontWeight: 600, fontSize: narrow ? 50 : 74, lineHeight: 0.92, letterSpacing: "0.01em", color: "var(--brass-300)", textShadow: "0 0 36px var(--brass-glow)" }}>{fmt(b.total)}</span>
+                                <RollingNumber value={fmt(b.total)} style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontWeight: 600, fontSize: narrow ? 50 : 74, lineHeight: 0.92, letterSpacing: "0.01em", color: "var(--brass-300)", textShadow: "0 0 36px var(--brass-glow)" }} />
                                 <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13, color: "var(--text-muted)" }}>vs {fmt(result.theirEhp)} EHP <InfoDot tip="Effective HP — the target's health scaled by their bullet/spirit resists. Higher resist means more effective HP to chew through." /></span>
                             </div>
                         </div>
@@ -794,17 +795,45 @@ const COMPARE_METRICS: { label: string; get: (r: SimResult) => number | null; be
 ];
 
 // A | B segmented switch — picks which build the whole tool is editing.
+// Slides a single indicator (underline or pill) to the active tab: measure the active
+// element's box and let CSS transition left/width animate the move. SSR-safe via the
+// isomorphic layout effect (positions correctly on first client paint, no flash); the
+// transition only kicks in on later changes. Re-measures on resize.
+const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+function useTabIndicator<K extends string>(active: K) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const refs = useRef<Map<K, HTMLElement>>(new Map());
+    const [box, setBox] = useState({ left: 0, top: 0, width: 0, height: 0 });
+    const measure = useCallback(() => {
+        const el = refs.current.get(active);
+        if (el) setBox({ left: el.offsetLeft, top: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight });
+    }, [active]);
+    useIsoLayoutEffect(() => { measure(); }, [measure]);
+    useEffect(() => {
+        const onResize = () => measure();
+        window.addEventListener("resize", onResize);
+        return () => window.removeEventListener("resize", onResize);
+    }, [measure]);
+    const setRef = useCallback((key: K) => (el: HTMLElement | null) => { if (el) refs.current.set(key, el); }, []);
+    return { containerRef, setRef, box };
+}
+
 function BuildTabs({ active, onActive }: { active: "A" | "B"; onActive: (b: "A" | "B") => void }) {
+    const { containerRef, setRef, box } = useTabIndicator(active);
     return (
-        <div style={{ display: "inline-flex", padding: 2, gap: 2, background: "var(--surface-well)", border: "1px solid var(--border-strong)", borderRadius: "var(--r-sm)" }}>
+        <div ref={containerRef} style={{ position: "relative", display: "inline-flex", padding: 2, gap: 2, background: "var(--surface-well)", border: "1px solid var(--border-strong)", borderRadius: "var(--r-sm)" }}>
+            <span aria-hidden style={{ position: "absolute", top: box.top, left: box.left, width: box.width, height: box.height, borderRadius: "var(--r-xs)",
+                border: "1px solid var(--brass-500)", background: "color-mix(in srgb, var(--brass-500) 18%, transparent)", pointerEvents: "none",
+                transition: "left var(--motion-base) var(--ease-out), width var(--motion-base) var(--ease-out)" }} />
             {(["A", "B"] as const).map((b) => {
                 const on = active === b;
                 return (
-                    <button key={b} type="button" onClick={() => onActive(b)} aria-pressed={on} title={`Edit build ${b}`}
-                        style={{ height: 24, minWidth: 32, padding: "0 9px", cursor: "pointer", borderRadius: "var(--r-xs)",
-                            border: `1px solid ${on ? "var(--brass-500)" : "transparent"}`,
-                            background: on ? "color-mix(in srgb, var(--brass-500) 18%, transparent)" : "transparent",
-                            color: on ? "var(--brass-300)" : "var(--text-muted)", fontFamily: "var(--font-oswald)", fontWeight: 700, fontSize: 12, letterSpacing: "0.06em" }}>
+                    <button key={b} ref={setRef(b)} type="button" onClick={() => onActive(b)} aria-pressed={on} title={`Edit build ${b}`}
+                        style={{ position: "relative", height: 24, minWidth: 32, padding: "0 9px", cursor: "pointer", borderRadius: "var(--r-xs)",
+                            border: "1px solid transparent", background: "transparent",
+                            color: on ? "var(--brass-300)" : "var(--text-muted)", fontFamily: "var(--font-oswald)", fontWeight: 700, fontSize: 12, letterSpacing: "0.06em",
+                            transition: "color var(--motion-fast)" }}>
                         {b}
                     </button>
                 );
@@ -839,7 +868,7 @@ function CompareRow({ m, a, b, active, fmt, narrow }: { m: (typeof COMPARE_METRI
                     )}
                 </div>
             )}
-            <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 13.5, color: "var(--text)", textAlign: "right" }}>{fmtV(bv)}</span>
+            <RollingNumber value={fmtV(bv)} style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 13.5, color: "var(--text)", textAlign: "right" }} />
             <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 12.5, color: dColor, textAlign: "right" }}>{deltaText}</span>
         </div>
     );
@@ -1181,20 +1210,23 @@ function OverviewTabs({ active, onChange }: { active: "damage" | "vitality" | "s
         ["vitality", "Vitality", "var(--vitality-400)"],
         ["spirit", "Spirit", "var(--spirit-400)"],
     ] as const;
+    const { containerRef, setRef, box } = useTabIndicator(active);
+    const activeColor = tabs.find(([k]) => k === active)?.[2] ?? "var(--brass-300)";
     return (
-        <div style={{ display: "flex", gap: 2, marginBottom: 14, borderBottom: "1px solid var(--border)" }}>
+        <div ref={containerRef} style={{ position: "relative", display: "flex", gap: 2, marginBottom: 14, borderBottom: "1px solid var(--border)" }}>
             {tabs.map(([key, label, color]) => {
                 const on = active === key;
                 return (
-                    <button key={key} type="button" onClick={() => onChange(key)} aria-pressed={on}
-                        style={{ padding: "7px 14px", cursor: "pointer", background: "transparent", border: "none", marginBottom: -1,
-                            borderBottom: `2px solid ${on ? color : "transparent"}`,
+                    <button key={key} ref={setRef(key)} type="button" onClick={() => onChange(key)} aria-pressed={on}
+                        style={{ padding: "7px 14px", cursor: "pointer", background: "transparent", border: "none",
                             fontFamily: "var(--font-oswald)", fontWeight: 600, fontSize: 14, letterSpacing: "0.06em", textTransform: "uppercase",
-                            color: on ? color : "var(--text-dim)" }}>
+                            color: on ? color : "var(--text-dim)", transition: "color var(--motion-fast)" }}>
                         {label}
                     </button>
                 );
             })}
+            <span aria-hidden style={{ position: "absolute", bottom: -1, left: box.left, width: box.width, height: 2, background: activeColor, pointerEvents: "none",
+                transition: "left var(--motion-base) var(--ease-out), width var(--motion-base) var(--ease-out), background var(--motion-base)" }} />
         </div>
     );
 }
@@ -1207,7 +1239,7 @@ function OverviewStat({ label, value, unit, color, tip }: { label: string; value
                 {tip && <InfoDot tip={tip} />}
             </span>
             <span style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
-                <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 19, color: color ?? "var(--text)" }}>{value}</span>
+                <RollingNumber value={value} style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 19, color: color ?? "var(--text)" }} />
                 {unit && <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{unit}</span>}
             </span>
         </div>
@@ -1442,7 +1474,7 @@ function StatReadout({ label, value, unit, sub, accent, tip, center }: { label: 
                 {tip && <InfoDot tip={tip} />}
             </span>
             <div style={{ display: "flex", alignItems: "baseline", gap: 5, justifyContent: center ? "center" : undefined }}>
-                <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: accent ? 28 : 22, lineHeight: 1, color: accent ? "var(--brass-300)" : "var(--text)", textShadow: accent ? "0 0 20px var(--brass-glow)" : "none" }}>{value}</span>
+                <RollingNumber value={value} style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: accent ? 28 : 22, lineHeight: 1, color: accent ? "var(--brass-300)" : "var(--text)", textShadow: accent ? "0 0 20px var(--brass-glow)" : "none" }} />
                 {unit && <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{unit}</span>}
             </div>
             {sub && <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{sub}</span>}
