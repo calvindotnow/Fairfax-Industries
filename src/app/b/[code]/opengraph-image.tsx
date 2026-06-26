@@ -43,14 +43,12 @@ export default async function OgImage({ params }: { params: Promise<{ code: stri
       <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: C.bg, color: C.text, padding: 64, fontFamily: "sans-serif" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flex: 1 }}>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
-            {hero.imageUrl ? <img src={hero.imageUrl} width={160} height={160} style={{ borderRadius: 16 }} /> : null}
-            <div style={{ display: "flex", marginTop: 16, fontSize: 52, color: C.brass }}>{hero.name}</div>
+            <div style={{ display: "flex", fontSize: 52, color: C.brass }}>{hero.name}</div>
             <div style={{ display: "flex", fontSize: 24, color: C.muted }}>Attacker · Lvl {result.level}</div>
           </div>
           <div style={{ display: "flex", fontSize: 48, color: C.brass400 }}>VS</div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-            {target.imageUrl ? <img src={target.imageUrl} width={160} height={160} style={{ borderRadius: 16 }} /> : null}
-            <div style={{ display: "flex", marginTop: 16, fontSize: 52, color: C.danger }}>{target.name}</div>
+            <div style={{ display: "flex", fontSize: 52, color: C.danger }}>{target.name}</div>
             <div style={{ display: "flex", fontSize: 24, color: C.muted }}>Target</div>
           </div>
         </div>
