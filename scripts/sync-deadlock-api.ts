@@ -19,6 +19,25 @@ const FETCH_OPTS: RequestInit = {
     headers: { "User-Agent": "fairfax-industries-deadlock-sandbox (+https://github.com/)" },
 };
 
+// ─── Lane Lab analytics ───────────────────────────────────────────────────────
+const ANALYTICS_API = "https://api.deadlock-api.com/v1/analytics";
+const LANE_LAB = { min_average_badge: 80, min_matches: 100, window_days: 30 } as const;
+const TOP_N_COUNTER_ITEMS = 12;
+// Optional dev cap: set LANE_LAB_MAX_HEROES to a small number to validate the script quickly.
+// When unset the full active-hero roster is used (the daily CI action bakes all heroes).
+const MAX_HEROES = process.env.LANE_LAB_MAX_HEROES ? Number(process.env.LANE_LAB_MAX_HEROES) : Infinity;
+
+async function getJSON(url: string): Promise<any> {
+    const headers: Record<string, string> = {
+        "User-Agent": "fairfax-industries-deadlock-sandbox (+https://github.com/)",
+    };
+    if (process.env.DEADLOCK_API_KEY) headers["X-API-KEY"] = process.env.DEADLOCK_API_KEY;
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`${res.status} ${url}`);
+    return res.json();
+}
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 const num = (v: any): number | null =>
     typeof v === "number" ? v : typeof v?.value === "number" ? v.value : null;
 
@@ -670,6 +689,54 @@ async function main() {
         )
     );
     console.log(`  baked data → src/lib/baked-data.json (${bakedHeroes.length} heroes, ${bakedItems.length} items, ${snapshots.length} snapshots)`);
+
+    // ─── Lane Lab analytics ─────────────────────────────────────────────────────
+    // Fetches counter/synergy/item analytics from deadlock-api and bakes them into
+    // a separate lane-lab-data.json (kept out of baked-data.json to cap bundle size).
+    // Note: analytics endpoints use the deadlock-api hero IDs (h.id from heroData),
+    // NOT the internal auto-incremented DB ids stored in bakedHeroes.
+    console.log("Fetching Lane Lab analytics from deadlock-api…");
+    const since = Math.floor(Date.now() / 1000) - LANE_LAB.window_days * 86400;
+    const base = `min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&same_lane_filter=true`;
+
+    const counter_stats = await getJSON(`${ANALYTICS_API}/hero-counter-stats?${base}&min_matches=${LANE_LAB.min_matches}`);
+    const synergy_stats = await getJSON(`${ANALYTICS_API}/hero-synergy-stats?${base}&min_matches=${LANE_LAB.min_matches}`);
+    // hero-level item stats (one call, bucket=hero): each row's `bucket` field is the hero_id
+    const itemRows: any[] = await getJSON(`${ANALYTICS_API}/item-stats?bucket=hero&min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&min_matches=200`);
+    const item_stats: Record<number, any[]> = {};
+    for (const r of itemRows) (item_stats[r.bucket] ??= []).push({ item_id: r.item_id, wins: r.wins, losses: r.losses, matches: r.matches });
+
+    // Use the deadlock-api hero IDs (h.id) from the already-fetched heroData.
+    // bakedHeroes ids are auto-incremented DB ids and do NOT match the analytics API.
+    const activeHeroIds = (heroData as any[])
+        .filter((h) => !h.disabled && h.player_selectable)
+        .map((h) => h.id as number)
+        .slice(0, MAX_HEROES);
+
+    // Per-(hero, enemy) curated counter items — top-N by winrate, paced ≥350ms per call.
+    const counter_item_stats: Record<number, Record<number, any[]>> = {};
+    let pairCount = 0;
+    for (const hid of activeHeroIds) {
+        counter_item_stats[hid] = {};
+        for (const eid of activeHeroIds) {
+            if (eid === hid) continue;
+            const rows: any[] = await getJSON(
+                `${ANALYTICS_API}/item-stats?hero_id=${hid}&enemy_hero_ids=${eid}&same_lane_filter=true&min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&min_matches=50`,
+            );
+            counter_item_stats[hid][eid] = rows
+                .map((r) => ({ item_id: r.item_id, wins: r.wins, losses: r.losses, matches: r.matches }))
+                .sort((a, b) => (b.wins / Math.max(b.matches, 1)) - (a.wins / Math.max(a.matches, 1)))
+                .slice(0, TOP_N_COUNTER_ITEMS);
+            pairCount++;
+            await sleep(350);
+        }
+    }
+
+    writeFileSync(
+        new URL("../src/lib/lane-lab-data.json", import.meta.url),
+        JSON.stringify({ synced_at: new Date().toISOString(), params: LANE_LAB, counter_stats, counter_item_stats, item_stats, synergy_stats }),
+    );
+    console.log(`  lane-lab data → src/lib/lane-lab-data.json (${counter_stats.length} counter pairs, ${activeHeroIds.length} heroes, ${pairCount} per-pair calls)`);
     console.log("Done.");
 }
 
