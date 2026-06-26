@@ -98,7 +98,8 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     // Assumed stacks for stacking items (Berserker/Glass Cannon). Defaults high so a
     // freshly-equipped stacking item shows fully stacked; capped per item in the engine
     // and by the slider's max below.
-    const [stacks, setStacks] = useState(99);
+    // Per-item stacks (item id → count). Unset = fully stacked (the item's own max).
+    const [stacksByItem, setStacksByItem] = useState<Record<number, number>>({});
     // Imbue assignments: imbue item id → the ability id it's attached to (one per ability).
     const [imbueAssign, setImbueAssign] = useState<Record<number, number>>({});
 
@@ -216,14 +217,14 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     const targetEquipped = useMemo(() => targetLoadout.map((id) => items.find((i) => i.id === id)!).filter(Boolean), [targetLoadout, items]);
 
     // Both builds run against the same hero, target, and scenario.
-    const sharedSim = { hero, target, targetEquipped, matchTargetLevel, range, shots, headshots, disabledAbilities, hittingEnemy, resistDebuffs, activesFiring, stacks };
+    const sharedSim = { hero, target, targetEquipped, matchTargetLevel, range, shots, headshots, disabledAbilities, hittingEnemy, resistDebuffs, activesFiring, stacksByItem };
     const simAttacker = (atkItems: ItemWithModifiers[]) =>
         !hero || !target
             ? null
             : simulate(
                   { hero, items: atkItems },
                   { hero: target, items: targetEquipped, matchAttackerLevel: matchTargetLevel },
-                  { range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring, stacks }
+                  { range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring, stacksByItem }
               );
     /* eslint-disable react-hooks/exhaustive-deps */
     const resultA = useMemo(() => simAttacker(equippedA), [equippedA, sharedSim]);
@@ -233,9 +234,11 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     // The VS band + damage panel reflect whichever build you're actively editing.
     const equipped = activeBuild === "B" ? equippedB : equippedA;
     const result = activeBuild === "B" ? resultB : resultA;
-    // Highest stack cap among equipped stacking items (0 if none) — drives the Stacks slider.
-    const maxStacksEquipped = useMemo(
-        () => Math.max(0, ...equipped.flatMap((it) => parseEffects(it.effects)).filter((e) => e.kind === "stacking").map((e) => e.maxStacks ?? 0)),
+    // Equipped stacking items + each one's own max (drives the per-item Stacks chips).
+    const stackingItems = useMemo(
+        () => equipped
+            .map((it) => { const e = parseEffects(it.effects).find((x) => x.kind === "stacking"); return e ? { item: it, max: e.maxStacks ?? 0 } : null; })
+            .filter((x): x is { item: ItemWithModifiers; max: number } => x != null && x.max > 0),
         [equipped]
     );
     // Equipped imbue items + a reverse map (ability id → the imbue attached to it).
@@ -571,17 +574,17 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                             tip="Your resist-reduction items (Crippling Headshot, Bullet Resist Shredder) are lowering the target's resists." />
                         <ScenarioChip label="Actives firing" on={activesFiring} onClick={() => setActivesFiring((v) => !v)}
                             tip="Assume your active items are firing. (Active-item combos are modeled in a later pass.)" />
-                        {maxStacksEquipped > 0 && (
-                            <span title="Stacks for Berserker / Glass Cannon — each ramps per stack up to its own cap."
-                                style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 26, padding: "0 10px", borderRadius: "var(--r-pill)", border: "1px solid var(--border-brass)", background: "color-mix(in srgb, var(--brass-500) 10%, transparent)" }}>
-                                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--brass-300)" }}>Stacks</span>
-                                <input type="range" min={0} max={maxStacksEquipped} step={1} value={Math.min(stacks, maxStacksEquipped)}
-                                    onChange={(e) => setStacks(Number(e.target.value))} aria-label="Stacking item stacks"
-                                    style={{ width: 88, accentColor: "var(--brass-500)" }} />
-                                <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 12, color: "var(--text)", minWidth: 30, textAlign: "right" }}>{Math.min(stacks, maxStacksEquipped)}/{maxStacksEquipped}</span>
-                            </span>
-                        )}
                     </div>
+                    {/* Per-item stacks — its own line, only when a stacking item is equipped. */}
+                    {stackingItems.length > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7, marginBottom: 16 }}>
+                            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--text-dim)", marginRight: 2 }}>Stacks</span>
+                            {stackingItems.map(({ item, max }) => (
+                                <StackChip key={item.id} name={item.name} max={max} value={Math.min(stacksByItem[item.id] ?? max, max)}
+                                    onChange={(n) => setStacksByItem((p) => ({ ...p, [item.id]: n }))} />
+                            ))}
+                        </div>
+                    )}
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
                         <StatReadout label="Sustained DPS" value={fmt(result.sustainedDps)} unit="dps" accent tip={`Damage per second firing continuously at this range (fire rate × damage per shot, after the target's resists)${result.procDps > 0 ? `, including ${fmt(result.procDps)} from on-hit procs` : ""}.`} />
                         <StatReadout label="Time to kill" value={result.timeToKill != null ? result.timeToKill.toFixed(1) : "—"} unit="s" tip="Seconds to drop the target's effective HP at this range, firing continuously. “—” means sustained DPS can't finish them." />
@@ -1087,6 +1090,38 @@ function HeroSelect({ heroes, value, onChange, accentColor, align = "left" }: { 
                 {heroes.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
             </select>
         </div>
+    );
+}
+
+function StackChip({ name, value, max, onChange }: { name: string; value: number; max: number; onChange: (n: number) => void }) {
+    const [open, setOpen] = useState(false);
+    const full = value >= max;
+    return (
+        <span style={{ position: "relative", display: "inline-flex" }}>
+            <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} title={`${name} — set stacks (0–${max})`}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 26, padding: "0 10px", cursor: "pointer", borderRadius: "var(--r-pill)",
+                    fontFamily: "var(--font-archivo)", fontSize: 11.5, whiteSpace: "nowrap", color: full ? "var(--brass-300)" : "var(--text-muted)",
+                    border: `1px solid ${full ? "var(--border-brass)" : "var(--border-strong)"}`,
+                    background: full ? "color-mix(in srgb, var(--brass-500) 12%, transparent)" : "var(--surface-raised)" }}>
+                <span style={{ maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+                <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", color: full ? "var(--brass-300)" : "var(--text)" }}>{value}/{max}</span>
+                <span style={{ fontSize: 8, color: "var(--text-dim)" }}>▾</span>
+            </button>
+            {open && (
+                <>
+                    <span onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                    <div style={{ position: "absolute", top: 30, left: 0, zIndex: 41, minWidth: 180, padding: "12px 14px", borderRadius: "var(--r-md)", background: "linear-gradient(180deg, var(--ink-820), var(--ink-870))", border: "1px solid var(--border-brass)", boxShadow: "var(--elev-pop)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                            <span style={{ fontSize: 12, color: "var(--text)" }}>{name}</span>
+                            <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 12, color: "var(--brass-300)" }}>{value}/{max}</span>
+                        </div>
+                        <input type="range" min={0} max={max} step={1} value={value} onChange={(e) => onChange(Number(e.target.value))} aria-label={`${name} stacks`}
+                            style={{ width: "100%", accentColor: "var(--brass-500)" }} />
+                        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 10, color: "var(--text-dim)" }}><span>0</span><span>{max} stacks</span></div>
+                    </div>
+                </>
+            )}
+        </span>
     );
 }
 

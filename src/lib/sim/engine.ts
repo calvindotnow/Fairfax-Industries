@@ -404,16 +404,19 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
 
     const inv = investmentFor(items);
     // Stacking items (Berserker/Glass Cannon): fold `stacks × per-stack` into the stat
-    // sums as synthetic modifiers, each capped at its own maxStacks. Spirit power is a
-    // flat add; weapon damage / fire rate are percent.
-    const stacks = opts.stacks ?? 0;
-    const stackMods: StatModifier[] = effects
-        .filter((e) => e.kind === "stacking" && e.stat)
-        .map((e) => {
-            const amt = Math.min(stacks, e.maxStacks ?? 0) * e.value;
-            const flat = e.stat === "spiritPower";
-            return { statName: e.stat as string, flatBonus: flat ? amt : 0, percentBonus: flat ? 0 : amt };
-        });
+    // sums as synthetic modifiers. Stacks are per item (item id → count), defaulting to the
+    // item's own max when unset. Spirit power is a flat add; weapon damage / fire rate are %.
+    const stackMods: StatModifier[] = items.flatMap((it) =>
+        parseEffects(it.effects)
+            .filter((e) => e.kind === "stacking" && e.stat)
+            .map((e) => {
+                const max = e.maxStacks ?? 0;
+                const n = Math.min(opts.stacksByItem?.[it.id] ?? max, max);
+                const amt = n * e.value;
+                const flat = e.stat === "spiritPower";
+                return { statName: e.stat as string, flatBonus: flat ? amt : 0, percentBonus: flat ? 0 : amt };
+            })
+    );
     const heroStats = calculateStats(applyLevel(hero, level), [...items, { modifiers: inv.mods }, { modifiers: stackMods }]);
 
     // Target builds its own loadout: its souls drive its level, and its items +

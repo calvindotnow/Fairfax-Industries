@@ -149,7 +149,8 @@ export interface SimOptions {
     hittingEnemy?: boolean;   // activated fire-rate tiers (Burst Fire) + on-hit conditions
     resistDebuffs?: boolean;  // apply the attacker's resist-reduction items to the target
     activesFiring?: boolean;  // active-item effects are firing (reserved for active-combo modeling)
-    stacks?: number;          // assumed stack count for stacking items (capped per item's maxStacks)
+    // Per-item assumed stack count (item id → stacks). Unset = fully stacked (the item's max).
+    stacksByItem?: Record<number, number>;
 }
 
 export interface AbilityRow {
