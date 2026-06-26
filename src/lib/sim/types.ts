@@ -19,11 +19,20 @@ export interface StatModifier {
 
 /** A direct-damage effect an item adds (proc, conditional flat/percent add). */
 export interface ItemEffect {
-    kind: "onHitProc" | "onHitFlat" | "conditionalWeaponPct" | "conditionalFireRate" | "targetResistReduction" | "stacking" | "imbue" | "activeBuff";
+    kind: "onHitProc" | "onHitFlat" | "conditionalWeaponPct" | "conditionalFireRate" | "targetResistReduction" | "stacking" | "imbue" | "activeBuff" | "activeDamage";
     damageType?: DamageType;
     value: number;
     // stacking: `value` = per-stack amount, `stat` = the stat it boosts, `maxStacks` = cap.
     // (Berserker: +7% bulletDamage/stack ×10; Glass Cannon: +7% weaponFireRate/stack ×8.)
+    // activeDamage: an active item's own on-cast direct damage (Arctic Blast 175 +0.70/Spirit,
+    // Cold Front, Silence Wave, …). `value` = base, `spiritScale` = per-Spirit bonus. Folded
+    // into burst while "Actives firing" is on (or always, if `alwaysOn`); always listed in the
+    // Spirit panel. `healthPctDamage` adds that % of the target's max health (Tankbuster, the
+    // calculator assumes the breakpoint is met); `ignoreResist` skips mitigation; `alwaysOn`
+    // counts toward burst without the Actives-firing toggle (passive charge-up procs).
+    healthPctDamage?: number;
+    ignoreResist?: boolean;
+    alwaysOn?: boolean;
     stat?: string;
     maxStacks?: number;
     valueType?: "flat" | "percentOfShot";
@@ -37,6 +46,9 @@ export interface ItemEffect {
     rangeMin?: number; // meters
     rangeMax?: number; // meters
     itemName?: string;
+    // The id of the item this effect came from. Attached when the engine flattens each
+    // item's effects, so burst inclusion can be refined per item (excludedActiveItemIds).
+    itemId?: number;
 }
 
 export interface AbilityData {
@@ -57,6 +69,27 @@ export interface AbilityData {
     // JSON string of scaling metadata, e.g.
     // { damageScalePerSpirit, rangeScalesWithSpirit, durationScalesWithSpirit }
     properties?: string | null;
+    // JSON string of the ability-rank profile (precomputed by the sync):
+    // { ranks: AbilityRankStats[4], tiers: string[][] }. Indexed by selected rank 0–3.
+    upgrades?: string | null;
+}
+
+/** One rank's resolved stat snapshot (rank 0 = base, 1–3 = cumulative tier upgrades). */
+export interface AbilityRankStats {
+    damage: number;
+    scale: number;
+    dotDps: number;
+    dotDuration: number;
+    range: number | null;
+    duration: number | null;
+    charges: number | null;
+    cooldown: number | null;
+}
+
+/** Parsed ability-rank profile: 4 stat snapshots + 3 human-readable tier change lists. */
+export interface AbilityUpgrades {
+    ranks: AbilityRankStats[];
+    tiers: string[][];
 }
 
 /** Parsed shape of AbilityData.properties — flags for the dimensions that scale
@@ -158,6 +191,13 @@ export interface SimOptions {
     stacksByItem?: Record<number, number>;
     accuracy?: number; // 0–100; fraction of shots that land. Scales sustained DPS. Default 100.
     headshotPct?: number; // 0–100; fraction of landed shots that hit the head (sustained DPS). Default 0.
+    // Per-ability trained rank (ability id → 0–3). Unset = rank 0 (base). Higher ranks apply
+    // the ability's tier upgrades to its damage / range / duration / charges / cooldown.
+    abilityRanks?: Record<number, number>;
+    // Item ids whose active *direct damage* is excluded from the burst even while "Actives
+    // firing" is on (the player didn't press that active in this combo). Default: none
+    // excluded. Always-on charge-up damage (Tankbuster) and self-buffs are unaffected.
+    excludedActiveItemIds?: number[];
 }
 
 export interface AbilityRow {
@@ -185,6 +225,11 @@ export interface AbilityRow {
     dotPerSec: number;
     /** Mitigated DoT damage over the full duration if the enemy sits in it (0 for non-DoT). */
     dotFull: number;
+    /** Selected trained rank (0–3) and the max rank available for this ability. */
+    rank: number;
+    maxRank: number;
+    /** Human-readable change list per tier (tiers[0] = rank-1 changes, …). For tooltips. */
+    tiers: string[][];
 }
 
 export interface BurstProc {
@@ -231,4 +276,8 @@ export interface SimResult {
 
     abilities: AbilityRow[];
     burst: BurstResult;
+    /** Equipped items that deal Spirit damage scaling with Spirit Power (Arctic Blast,
+     *  Mystic Shot, …), with their current mitigated per-cast/per-proc value. For the
+     *  Spirit panel — these aren't abilities, but they grow with Spirit just the same. */
+    spiritItemDamage: { name: string; value: number; perProc?: boolean }[];
 }

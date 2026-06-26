@@ -11,6 +11,7 @@ import type {
     AbilityRow,
     AbilityScaling,
     AbilityScalingInfo,
+    AbilityUpgrades,
     Build,
     BurstResult,
     ComputedStats,
@@ -221,10 +222,29 @@ export function deriveAbilityScaling(
     };
 }
 
+/** Resolve an ability's effective stats at a trained rank from its precomputed rank
+ *  profile (`upgrades` JSON), falling back to the base columns when no profile exists. */
+function resolveRank(a: AbilityData, requested: number) {
+    let parsed: AbilityUpgrades | null = null;
+    if (a.upgrades) {
+        try { parsed = JSON.parse(a.upgrades); } catch { /* malformed — fall back to base */ }
+    }
+    const maxRank = parsed ? parsed.ranks.length - 1 : 0;
+    const rank = Math.max(0, Math.min(Math.floor(requested) || 0, maxRank));
+    const snap = parsed?.ranks?.[rank];
+    const eff = snap ?? {
+        damage: a.baseDamage ?? 0, scale: a.spiritScaling ?? 0, dotDps: a.dotDps ?? 0,
+        dotDuration: a.dotDuration ?? 0, range: a.range ?? null, duration: a.duration ?? null,
+        charges: a.charges ?? null, cooldown: a.cooldown ?? null,
+    };
+    return { eff, rank, maxRank, tiers: parsed?.tiers ?? [] };
+}
+
 function buildAbilityRows(
     abilities: AbilityData[],
     heroStats: ComputedStats,
-    targetStats: ComputedStats
+    targetStats: ComputedStats,
+    ranks: Record<number, number> = {}
 ): AbilityRow[] {
     const spirit = heroStats.spiritPower ?? 0;
     return abilities.map((a) => {
@@ -233,28 +253,35 @@ function buildAbilityRows(
             type === "spirit"
                 ? 1 - (targetStats.spiritResist ?? 0) / 100
                 : 1 - (targetStats.bulletResist ?? 0) / 100;
-        const isDot = (a.dotDps ?? 0) > 0;
-        const { damageScalePerSpirit, scalesWithSpirit } = deriveAbilityScaling(a);
+        const { eff, rank, maxRank, tiers } = resolveRank(a, ranks[a.id] ?? 0);
+        const isDot = eff.dotDps > 0;
+        const { rangeScalesWithSpirit, durationScalesWithSpirit } = deriveAbilityScaling(a);
+        // The damage coefficient grows with rank, so read it from the resolved snapshot.
+        const damageScalePerSpirit = eff.scale;
+        const scalesWithSpirit = damageScalePerSpirit > 0 || rangeScalesWithSpirit || durationScalesWithSpirit;
         const base = {
             id: a.id,
             name: a.name,
             type: a.type,
             imageUrl: a.imageUrl,
-            cooldown: a.cooldown,
-            range: a.range,
-            duration: a.duration,
-            charges: a.charges,
+            cooldown: eff.cooldown,
+            range: eff.range,
+            duration: eff.duration,
+            charges: eff.charges,
             chargeCooldown: a.chargeCooldown,
             damageType: type,
             isUltimate: a.type === "ultimate",
             isDot,
             scalesWithSpirit,
             damageScalePerSpirit,
+            rank,
+            maxRank,
+            tiers,
         };
         if (isDot) {
             // Channeled/burn DoT — a per-second rate, not an instant-burst hit.
-            const perSec = ((a.dotDps ?? 0) + spirit * (a.spiritScaling ?? 0)) * res;
-            const dotFull = perSec * (a.dotDuration ?? 0);
+            const perSec = (eff.dotDps + spirit * eff.scale) * res;
+            const dotFull = perSec * (eff.dotDuration ?? 0);
             return {
                 ...base,
                 display: type === "utility" ? "—" : `${Math.round(perSec).toLocaleString()}/s`,
@@ -263,7 +290,11 @@ function buildAbilityRows(
                 dotFull: type === "utility" ? 0 : dotFull,
             };
         }
-        const total = calculateAbilityDamage(a, heroStats, targetStats).mitigatedDamage;
+        const total = calculateAbilityDamage(
+            { baseDamage: eff.damage, spiritScaling: eff.scale, dotDps: eff.dotDps, dotDuration: eff.dotDuration },
+            heroStats,
+            targetStats
+        ).mitigatedDamage;
         return {
             ...base,
             display: type === "utility" ? "—" : Math.round(total).toLocaleString(),
@@ -386,6 +417,20 @@ function computeBurst(
         procs.push({ name: e.itemName, count, dmg });
     }
 
+    // Active items' own on-cast damage (Arctic Blast, Cold Front, …) lands once in the combo
+    // while "Actives firing" is on, unless the player toggled that specific active out of the
+    // burst (excludedActiveItemIds); passive charge-up procs (Tankbuster) are `alwaysOn` and
+    // ignore both the gate and the exclusion.
+    const excludedActives = new Set(opts.excludedActiveItemIds ?? []);
+    for (const e of effects.filter((e) => e.kind === "activeDamage"
+        && (e.alwaysOn || (opts.activesFiring && !(e.itemId != null && excludedActives.has(e.itemId)))))) {
+        const raw = e.value + spirit * (e.spiritScale ?? 0) + (targetStats.maxHealth ?? 0) * ((e.healthPctDamage ?? 0) / 100);
+        const res = e.ignoreResist ? 1 : e.damageType === "spirit" ? spiritRes : bulletRes;
+        const dmg = raw * res;
+        procDamage += dmg;
+        procs.push({ name: e.itemName, count: 1, dmg });
+    }
+
     return {
         abilityDamage,
         weaponDamage,
@@ -405,7 +450,9 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
     // Parse each item's effects once, keeping the item association (stacking needs the
     // item id for per-item stack counts); `effects` is the flattened view for everything else.
     const itemEffects = items.map((it) => ({ it, effects: parseEffects(it.effects) }));
-    const effects = itemEffects.flatMap((x) => x.effects);
+    // Flattened view, each effect tagged with its source item id so burst inclusion can be
+    // refined per item (excludedActiveItemIds — which actives the player pressed this combo).
+    const effects = itemEffects.flatMap((x) => x.effects.map((e) => ({ ...e, itemId: x.it.id })));
     const disabled = new Set(opts.disabledAbilityIds ?? []);
 
     const soulsSpent = items.reduce((sum, it) => sum + (it.soulCost ?? 0), 0);
@@ -518,7 +565,21 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
     const theirEhp = targetStats.maxHealth / Math.max(1 - (targetStats.bulletResist ?? 0) / 100, 0.05);
     const timeToKill = sustainedDps > 0 ? targetStats.maxHealth / sustainedDps : null;
 
-    const abilities = buildAbilityRows(hero.abilities ?? [], heroStats, targetStats);
+    // Spirit-scaling item damage for the Spirit panel: active-item on-cast damage and
+    // on-hit spirit procs (Mystic Shot). Listed regardless of the scenario toggles — it's
+    // a build property — at the current Spirit, mitigated by the target's spirit resist.
+    const spiritItemDamage = effects
+        .filter((e) => (e.kind === "activeDamage" || e.kind === "onHitProc") && e.damageType === "spirit")
+        .map((e) => {
+            const raw = e.value + spiritPower * (e.spiritScale ?? 0) + (targetStats.maxHealth ?? 0) * ((e.healthPctDamage ?? 0) / 100);
+            return {
+                name: (e.itemName ?? "").split(":")[0],
+                value: raw * (e.ignoreResist ? 1 : spiritResFactor),
+                perProc: e.kind === "onHitProc",
+            };
+        });
+
+    const abilities = buildAbilityRows(hero.abilities ?? [], heroStats, targetStats, opts.abilityRanks);
     const burst = computeBurst(
         opts,
         effects,
@@ -550,5 +611,6 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
         melee,
         abilities,
         burst,
+        spiritItemDamage,
     };
 }

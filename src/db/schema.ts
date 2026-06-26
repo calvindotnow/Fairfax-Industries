@@ -66,6 +66,9 @@ export const abilities = sqliteTable("abilities", {
     imageUrl: text("image_url"),
     // JSON string for unique mechanics: { "SlowAmount": "20%", "StunDuration": "1.5s" }
     properties: text("properties"),
+    // JSON string of the ability-rank profile: precomputed stat snapshots at ranks 0–3
+    // plus human-readable tier change lists. Shape: { ranks: [...4], tiers: [[..],[..],[..]] }.
+    upgrades: text("upgrades"),
 });
 
 

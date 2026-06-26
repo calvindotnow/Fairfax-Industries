@@ -28,6 +28,8 @@ export type {
     HeroData,
     HeroWithAbilities,
     AbilityData,
+    AbilityUpgrades,
+    AbilityRankStats,
     ComputedStats,
     StatModifier,
     DamageType,

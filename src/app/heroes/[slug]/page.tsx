@@ -136,6 +136,13 @@ export default async function HeroDetailPage({
                   .filter(Boolean)
                   .join(" + ") || null;
               const { damageScalePerSpirit, scalesWithSpirit } = deriveAbilityScaling(a);
+              // Ability upgrade tiers (synthesized "what they change" lists from the rank profile).
+              let tiers: string[][] = [];
+              try {
+                if (a.upgrades) tiers = (JSON.parse(a.upgrades) as { tiers?: string[][] }).tiers ?? [];
+              } catch {
+                /* malformed — no tiers shown */
+              }
               const abilityStats = [
                 a.cooldown ? { label: "Cooldown", value: `${fmt(a.cooldown)}s` } : null,
                 a.range ? { label: "Range", value: `${fmt(a.range)} m` } : null,
@@ -198,6 +205,28 @@ export default async function HeroDetailPage({
                           ? ` · +${damageScalePerSpirit} damage per Spirit`
                           : ""}
                       </p>
+                    ) : null}
+                    {tiers.some((t) => t.length) ? (
+                      <div className="mt-3 border-t border-border pt-3">
+                        <p className="mb-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                          Upgrade tiers
+                        </p>
+                        <div className="space-y-1">
+                          {tiers.map((t, i) =>
+                            t.length ? (
+                              <div key={i} className="flex gap-2 text-[12px] leading-relaxed">
+                                <span
+                                  className="shrink-0 font-display text-[10px] uppercase tracking-wider"
+                                  style={{ color: "var(--brass-400)" }}
+                                >
+                                  T{i + 1}
+                                </span>
+                                <span className="text-muted-foreground">{t.join(" · ")}</span>
+                              </div>
+                            ) : null,
+                          )}
+                        </div>
+                      </div>
                     ) : null}
                   </div>
                 </div>

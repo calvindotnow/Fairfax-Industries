@@ -16,9 +16,10 @@ Severity: 🔴 blocks a cohort · 🟠 major friction / trust · 🟡 polish / e
 
 Scope limits, not bugs — surfaced on `/methodology`. Tightening them is "deeper engine" work in [features.md](features.md).
 
-- **Active items that deal direct damage** aren't folded into the burst as combo steps (their on-cast *self-buffs* — fire rate, etc. — are modeled via "Actives firing").
-- **Imbue** shows the relationship (which ability is imbued) but doesn't recompute that ability's numbers yet.
-- **%-of-health ability damage** (Vyper missing-health, current-health scalers) isn't shown as a flat number.
+- **Tier *behaviors* beyond stat deltas aren't simulated** — the ability-rank system applies every numeric tier upgrade (damage, range, duration, charges, cooldown — see Shipped), but tiers that add a *behavior* rather than a number are missed: e.g. Shiv's Slice and Dice "hits twice" at max is a mechanic, not a property delta, so it shows the per-hit number, not the doubled total.
+- **Spirit-power scaling of range/duration isn't applied** — rank upgrades change range/duration with concrete deltas (handled), but the separate Spirit-Power scaling of those dimensions exposes only a scale *type* (`ETechRange`/`ETechDuration`), no coefficient, so it stays a "scales with Spirit" tag rather than a recomputed figure.
+- **Imbue doesn't recompute the imbued ability** — it shows the relationship (which ability is imbued) but doesn't recompute that ability's numbers (including duration) yet.
+- **%-of-health ability damage** (Vyper missing-health, current-health scalers) isn't shown as a flat number. (Item current-health damage — Tankbuster — *is* now shown, assuming the breakpoint is met, at the target's full health.)
 - A few **stacking items** are recognized but display-only (spirit-damage amp like Escalating Exposure, heal-per-stack like Restorative Locket) — their slider shows, but the effect isn't in the damage number.
 
 ## Internal debt (no user impact)

@@ -43,8 +43,8 @@ const TOUR_STEPS: TourStep[] = [
     },
     {
         target: "abilities",
-        title: "Abilities & scaling",
-        body: <>Each ability lists {emph("CD / DMG / DUR / CHG")}. Toggle one to include or exclude it from burst. A {emph("↗")} marks abilities that scale with Spirit Power — those numbers grow as your Spirit does.</>,
+        title: "Abilities, ranks & scaling",
+        body: <>Each ability lists {emph("CD / DMG / RNG / DUR / CHG")}. Toggle one to include or exclude it from burst, and click the {emph("tier pips")} to rank it up — damage and the rest update live. A {emph("↗")} marks abilities that scale with Spirit Power.</>,
     },
     {
         target: "damage",
@@ -104,6 +104,12 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     const [stacksByItem, setStacksByItem] = useState<Record<number, number>>({});
     // Imbue assignments: imbue item id → the ability id it's attached to (one per ability).
     const [imbueAssign, setImbueAssign] = useState<Record<number, number>>({});
+    // Per-ability trained rank (ability id → 0–3). Unset = base. Drives the tier upgrades.
+    const [abilityRanks, setAbilityRanks] = useState<Record<number, number>>({});
+    // Damage-dealing actives the player chose NOT to press this combo (item ids). Empty = all
+    // included — only relevant while "Actives firing" is on; refines which actives' direct
+    // damage lands in the burst.
+    const [excludedActives, setExcludedActives] = useState<Set<number>>(new Set());
 
     // The attacker loadout the whole tool reads/writes: build A normally, build B
     // while comparing and editing B. Switching activeBuild swaps what's on screen.
@@ -191,6 +197,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     useEffect(() => {
         setDisabledAbilities(new Set(ultIdsOf(heroId)));
         setImbueAssign({}); // ability ids change with the hero — drop stale imbue links
+        setAbilityRanks({}); // ranks are per-ability — reset to base on a hero swap
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [heroId]);
 
@@ -220,14 +227,14 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     const targetEquipped = useMemo(() => targetLoadout.map((id) => items.find((i) => i.id === id)!).filter(Boolean), [targetLoadout, items]);
 
     // Both builds run against the same hero, target, and scenario.
-    const sharedSim = { hero, target, targetEquipped, matchTargetLevel, range, shots, headshots, accuracy, headshotPct, disabledAbilities, hittingEnemy, resistDebuffs, activesFiring, stacksByItem };
+    const sharedSim = { hero, target, targetEquipped, matchTargetLevel, range, shots, headshots, accuracy, headshotPct, disabledAbilities, hittingEnemy, resistDebuffs, activesFiring, stacksByItem, abilityRanks, excludedActives };
     const simAttacker = (atkItems: ItemWithModifiers[]) =>
         !hero || !target
             ? null
             : simulate(
                   { hero, items: atkItems },
                   { hero: target, items: targetEquipped, matchAttackerLevel: matchTargetLevel },
-                  { range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring, stacksByItem, accuracy, headshotPct }
+                  { range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring, stacksByItem, accuracy, headshotPct, abilityRanks, excludedActiveItemIds: [...excludedActives] }
               );
     /* eslint-disable react-hooks/exhaustive-deps */
     const resultA = useMemo(() => simAttacker(equippedA), [equippedA, sharedSim]);
@@ -248,6 +255,13 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                 return max > 0 ? { item: it, max, modeled: effs.some((e) => !!e.stat) } : null;
             })
             .filter((x): x is { item: ItemWithModifiers; max: number; modeled: boolean } => x != null),
+        [equipped]
+    );
+    // Equipped active items that deal on-cast direct damage (Arctic Blast, Cold Front, …) —
+    // each gets a chip to include/exclude from the burst. Always-on charge-up damage
+    // (Tankbuster) isn't a pressed active, so it's left out (it always counts).
+    const damageActives = useMemo(
+        () => equipped.filter((it) => parseEffects(it.effects).some((e) => e.kind === "activeDamage" && !e.alwaysOn)),
         [equipped]
     );
     // Equipped imbue items + a reverse map (ability id → the imbue attached to it).
@@ -488,10 +502,16 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                 <div data-tour="abilities" style={{ padding: 18 }}>
                     <SectionHead title="Abilities" />
                     {result.abilities.length > 0 && (
+                        <p style={{ fontSize: 11.5, color: "var(--text-dim)", margin: "-2px 0 8px", lineHeight: 1.4 }}>
+                            Click the <span style={{ color: "var(--brass-400)" }}>tier pips</span> by each ability to rank it up — damage, range, duration and cooldown update. Hover a pip for what the tier changes.
+                        </p>
+                    )}
+                    {result.abilities.length > 0 && (
                         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 10px 4px", marginBottom: 2 }}>
                             <span style={{ flex: 1 }} />
                             <AbilityColLabel w={40} title="Cooldown">CD</AbilityColLabel>
                             <AbilityColLabel w={52} title="Damage (or damage/sec for DoT)">DMG</AbilityColLabel>
+                            {!narrow && <AbilityColLabel w={48} title="Cast range / radius">RNG</AbilityColLabel>}
                             {!narrow && <AbilityColLabel w={44} title="Active duration">DUR</AbilityColLabel>}
                             {!narrow && <AbilityColLabel w={36} title="Charges">CHG</AbilityColLabel>}
                         </div>
@@ -522,6 +542,8 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                                             ? <Image src={a.imageUrl} alt="" width={32} height={32} style={{ width: 32, height: 32, objectFit: "contain", flexShrink: 0 }} />
                                             : <span style={{ width: 32, height: 32, borderRadius: "var(--r-sm)", background: "var(--surface-well)", flexShrink: 0 }} />}
                                         <span style={{ flex: 1, fontSize: 13.5, color: "var(--text)" }}>{a.name}</span>
+                                        <RankPips row={a} value={abilityRanks[a.id] ?? 0}
+                                            onChange={(r) => setAbilityRanks((prev) => { const next = { ...prev }; if (r <= 0) delete next[a.id]; else next[a.id] = r; return next; })} />
                                         {imbuedBy.get(a.id) && <span title={`Imbued with ${imbuedBy.get(a.id)!.name}`} style={{ fontSize: 11, color: "var(--spirit-400)" }}>⟡</span>}
                                         {a.isUltimate && <span style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--brass-400)" }}>ult</span>}
                                         <span style={{ fontFamily: "var(--font-numeric)", fontSize: 12, color: "var(--text-dim)", width: 40, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
@@ -532,6 +554,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                                             {a.display}
                                             {a.scalesWithSpirit && a.display !== "—" && <span style={{ fontSize: 9, color: "var(--spirit-400)", lineHeight: 1 }}>↗</span>}
                                         </span>
+                                        {!narrow && <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 12, color: "var(--text-dim)", width: 48, textAlign: "right" }}>{a.range ? `${a.range}m` : "—"}</span>}
                                         {!narrow && <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 12, color: "var(--text-dim)", width: 44, textAlign: "right" }}>{a.duration ? `${a.duration}s` : "—"}</span>}
                                         {!narrow && <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 12, color: "var(--text-dim)", width: 36, textAlign: "right" }} title={a.charges && a.chargeCooldown ? `${a.charges} charges · ${a.chargeCooldown}s between charges` : undefined}>{a.charges && a.charges > 1 ? `×${a.charges}` : "—"}</span>}
                                     </div>
@@ -575,7 +598,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                 <div data-tour="damage" style={{ padding: 18, borderLeft: narrow ? "none" : "1px solid var(--border)", borderTop: narrow ? "1px solid var(--border)" : "none" }}>
                     <OverviewTabs active={overviewTab} onChange={setOverviewTab} />
                     {overviewTab === "vitality" && <VitalityPanel hs={hs} hero={hero} meleeResist={equippedMeleeResist} critReductionPct={critReductionPct} fmt={fmt} />}
-                    {overviewTab === "spirit" && <SpiritPanel hs={hs} abilities={result.abilities} fmt={fmt} />}
+                    {overviewTab === "spirit" && <SpiritPanel hs={hs} abilities={result.abilities} itemDamage={result.spiritItemDamage} fmt={fmt} />}
                     {overviewTab === "damage" && (<>
                     {(() => { const RMAX = 50; const pct = (m: number) => `${Math.min(100, (m / RMAX) * 100)}%`; return (
                     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
@@ -605,8 +628,21 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                         <ScenarioChip label="Resist debuffs" on={resistDebuffs} onClick={() => setResistDebuffs((v) => !v)}
                             tip="Your resist-reduction items (Crippling Headshot, Bullet Resist Shredder) are lowering the target's resists." />
                         <ScenarioChip label="Actives firing" on={activesFiring} onClick={() => setActivesFiring((v) => !v)}
-                            tip="Apply your active items' on-cast self-buffs (e.g. Blood Tribute's fire rate) as if they're active." />
+                            tip="Apply your active items as if cast: their on-cast self-buffs (e.g. Blood Tribute's fire rate) and their direct damage (Arctic Blast, Cold Front) folded into burst. When on, toggle individual damage actives in/out below." />
                     </div>
+                    {/* Per-item active-damage selection — its own line, only while "Actives firing" is
+                        on and a damage-dealing active is equipped. Each chip includes/excludes that
+                        active's direct damage from the burst (all included by default). */}
+                    {activesFiring && damageActives.length > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7, marginBottom: 16 }}>
+                            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--text-dim)", marginRight: 2 }}>Actives</span>
+                            {damageActives.map((it) => (
+                                <ScenarioChip key={it.id} label={it.name} on={!excludedActives.has(it.id)}
+                                    onClick={() => setExcludedActives((prev) => { const next = new Set(prev); if (next.has(it.id)) next.delete(it.id); else next.add(it.id); return next; })}
+                                    tip={`Include ${it.name}'s on-cast damage in the burst combo. Toggle off if you don't press it this combo.`} />
+                            ))}
+                        </div>
+                    )}
                     {/* Per-item stacks — its own line, only when a stacking item is equipped. */}
                     {stackingItems.length > 0 && (
                         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7, marginBottom: 16 }}>
@@ -1203,8 +1239,33 @@ function VitalityPanel({ hs, hero, meleeResist, critReductionPct, fmt }: {
     );
 }
 
+// Per-ability tier control: a row of pips you click to set the trained rank (0–3). Each
+// pip's tooltip names what that tier changes. Stops click propagation so it doesn't also
+// toggle the ability in/out of the burst.
+function RankPips({ row, value, onChange }: { row: SimResult["abilities"][number]; value: number; onChange: (rank: number) => void }) {
+    if (row.maxRank < 1) return null;
+    return (
+        <span style={{ display: "inline-flex", gap: 3, alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+            {Array.from({ length: row.maxRank }).map((_, i) => {
+                const tier = i + 1;
+                const on = value >= tier;
+                const changes = row.tiers[i]?.length ? row.tiers[i].join(" · ") : "No stat change";
+                return (
+                    <button key={i} type="button"
+                        onClick={(e) => { e.stopPropagation(); onChange(value === tier ? tier - 1 : tier); }}
+                        title={`Tier ${tier}: ${changes}`}
+                        aria-label={`${row.name} tier ${tier}${on ? " (trained)" : ""}`}
+                        style={{ width: 11, height: 11, borderRadius: 2, padding: 0, cursor: "pointer", flexShrink: 0,
+                            border: `1px solid ${on ? "var(--brass-400)" : "var(--border-strong)"}`,
+                            background: on ? "var(--brass-400)" : "transparent", transition: "background 120ms, border-color 120ms" }} />
+                );
+            })}
+        </span>
+    );
+}
+
 // Spirit power + ability-output summary.
-function SpiritPanel({ hs, abilities, fmt }: { hs: Record<string, number>; abilities: SimResult["abilities"]; fmt: (n: number) => string }) {
+function SpiritPanel({ hs, abilities, itemDamage, fmt }: { hs: Record<string, number>; abilities: SimResult["abilities"]; itemDamage: SimResult["spiritItemDamage"]; fmt: (n: number) => string }) {
     const spiritAbilities = abilities.filter((a) => a.damageType === "spirit");
     const totalBurst = spiritAbilities.reduce((s, a) => s + a.burstDamage, 0);
     const totalDot = spiritAbilities.reduce((s, a) => s + a.dotFull, 0);
@@ -1226,6 +1287,20 @@ function SpiritPanel({ hs, abilities, fmt }: { hs: Record<string, number>; abili
                     ))}
                 </div>
             ) : <p style={{ fontSize: 13, color: "var(--text-dim)" }}>No spirit-damage abilities for this hero.</p>}
+            {itemDamage.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--text-dim)" }}>
+                        Item spirit damage
+                        <InfoDot tip="Equipped items that deal Spirit damage scaling with your Spirit Power (Arctic Blast, Mystic Shot, …), at the current Spirit and after the target's spirit resist. Active-item damage counts toward burst only while “Actives firing” is on." />
+                    </span>
+                    {itemDamage.map((it, i) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+                            <span style={{ flex: 1, color: "var(--text)" }}>{it.name}</span>
+                            <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 13, color: "var(--spirit-400)", width: 72, textAlign: "right" }}>{fmt(Math.round(it.value))}{it.perProc ? "/proc" : ""}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

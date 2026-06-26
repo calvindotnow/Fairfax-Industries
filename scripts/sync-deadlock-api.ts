@@ -42,6 +42,82 @@ const firstPos = (...vals: unknown[]): number | null => {
     return null;
 };
 
+// ── Ability ranks ──────────────────────────────────────────────────────────────
+// Each ability has up to 3 upgrade tiers (`ab.upgrades[].property_upgrades`), every entry a
+// { name, bonus, upgrade_type }. We precompute the ability's full stat profile at ranks 0–3
+// (cumulative) so the engine and UI just index by rank, and synthesize a readable change list
+// per tier (the API ships no prose for tiers — the property deltas *are* "what they change").
+type RankStats = { damage: number; scale: number; dotDps: number; dotDuration: number; range: number | null; duration: number | null; charges: number | null; cooldown: number | null };
+type RankKeys = { directKey?: string; dpsKey?: string; dotDurKey?: string; rangeKey?: string; durKey?: string };
+type PropUpgrade = { name: string; bonus: unknown; upgrade_type?: string };
+
+// Friendly labels for the property names that show up in tier upgrades.
+const UPGRADE_LABEL: Record<string, string> = {
+    Damage: "Damage", ImpactDamage: "Impact damage", BonusDamage: "Bonus damage", DPS: "Damage/sec",
+    BuffDamage: "Buff damage", BleedDPSPerStack: "Bleed damage/sec", AbilityCharges: "Charges",
+    AbilityCooldown: "Cooldown", AbilityCastRange: "Range", Radius: "Radius", AbilityDuration: "Duration",
+    BleedDuration: "Bleed duration", StunDuration: "Stun duration", SlowPercent: "Slow",
+    BulletResistReduction: "Bullet resist reduction", WeaponDamageBonus: "Weapon damage",
+    BonusFireRate: "Fire rate", BonusMoveSpeed: "Move speed", EnemyHealthPercent: "Execute threshold",
+    SleepDuration: "Sleep duration", DebuffDuration: "Debuff duration", EvasionPercent: "Evasion",
+    LifestealPercentHero: "Lifesteal vs heroes",
+};
+const prettyProp = (name: string) =>
+    UPGRADE_LABEL[name] ?? name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/^Ability /, "");
+
+// Render one upgrade as readable text: "+100 Damage", "−75s Cooldown", "+10m Radius",
+// "+0.09/Spirit Bleed damage/sec", "+113% Damage".
+function describeUpgrade(pu: PropUpgrade): string {
+    const label = prettyProp(pu.name);
+    const raw = String(pu.bonus);
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n) || n === 0) return label; // placeholder / no-op
+    if (pu.upgrade_type === "EAddToScale") return `+${n}/Spirit ${label}`;
+    // EMultiplyBase ships a percent (113 → "+113%"); EMultiplyScale ships a multiplier
+    // factor on the Spirit-scaling coefficient (1.22 → "+22%"), so convert it.
+    if (pu.upgrade_type === "EMultiplyBase") return `+${n}% ${label}`;
+    if (pu.upgrade_type === "EMultiplyScale") return `+${Math.round((n - 1) * 100)}% ${label}`;
+    const unit = /m$/.test(raw) ? "m" : /(Cooldown|Duration|Time)$/.test(pu.name) ? "s"
+        : /(Percent|Resist|Slow|FireRate|Speed|Evasion|Lifesteal)/.test(pu.name) ? "%" : "";
+    return `${n > 0 ? "+" : "−"}${Math.abs(n)}${unit} ${label}`;
+}
+
+// Apply one upgrade to a mutable rank profile (the damage fields are what the engine reads;
+// range/duration/charges/cooldown are display). EAddToScale bumps the per-Spirit coefficient.
+function applyUpgradeToProfile(s: RankStats, pu: PropUpgrade, keys: RankKeys): void {
+    const n = parseFloat(String(pu.bonus));
+    if (!Number.isFinite(n) || n === 0) return;
+    const t = pu.upgrade_type;
+    const addTo = (field: "damage" | "dotDps") => {
+        if (t === "EAddToScale") s.scale += n;
+        else if (t === "EMultiplyBase") s[field] *= 1 + n / 100;
+        else if (t === "EMultiplyScale") s.scale *= n;
+        else s[field] += n; // (none) / EAddToBase
+    };
+    if (pu.name === keys.directKey) addTo("damage");
+    else if (pu.name === keys.dpsKey) addTo("dotDps");
+    else if (keys.dotDurKey && pu.name === keys.dotDurKey) s.dotDuration += n;
+    else if (pu.name === "AbilityCharges") s.charges = (s.charges ?? 0) + n;
+    else if (pu.name === "AbilityCooldown" && s.cooldown != null) s.cooldown = Math.max(0, s.cooldown + n);
+    else if (keys.rangeKey && pu.name === keys.rangeKey) s.range = (s.range ?? 0) + n;
+    else if (keys.durKey && pu.name === keys.durKey) s.duration = (s.duration ?? 0) + n;
+}
+
+// Build the 4-rank profile (cumulative) + the 3 tier change lists from an ability's upgrades.
+function buildRankProfile(base: RankStats, upgrades: { property_upgrades?: PropUpgrade[] }[], keys: RankKeys) {
+    const ranks: RankStats[] = [{ ...base }];
+    const tiers: string[][] = [];
+    let cur = { ...base };
+    for (let i = 0; i < 3; i++) {
+        const tier = upgrades[i]?.property_upgrades ?? [];
+        cur = { ...cur };
+        tiers.push(tier.map(describeUpgrade));
+        for (const pu of tier) applyUpgradeToProfile(cur, pu, keys);
+        ranks.push({ ...cur });
+    }
+    return { ranks, tiers };
+}
+
 // Infer which computed stat a stacking/active-buff property boosts, from its name
 // (these properties carry no provided_property_type). Shared by stacking + active buffs.
 const statFromPropName = (k: string): string | null =>
@@ -117,7 +193,7 @@ function prettyName(name: string): string {
 }
 
 // Parse direct-damage effects (procs, conditional flat/percent adds) from an item's properties.
-function parseItemEffects(props: Record<string, any>, itemName: string) {
+function parseItemEffects(props: Record<string, any>, itemName: string, isActive = false) {
     const effects: any[] = [];
     const add = (e: any) => effects.push({ ...e, itemName });
     const pf = (v: any) => parseFloat(v); // tolerates "15m" style values
@@ -148,6 +224,42 @@ function parseItemEffects(props: Record<string, any>, itemName: string) {
         // Cooldown-gated weapon proc dealing a % of the shot (e.g. +125% base attack)
         else if (/^ProcBaseAttackDamagePercent$/i.test(k))
             add({ kind: "onHitProc", damageType: "weapon", value: val, valueType: "percentOfShot", procCooldown: procCd });
+    }
+
+    // Active items' own on-cast direct damage (Arctic Blast 175 +0.70/Spirit, Cold Front,
+    // Silence Wave, Phantom Strike, …). Only active items deal damage on press; passive
+    // items with a `Damage` field are conditional procs (Tankbuster, Lightning Scroll) we
+    // don't fold in here. A real damage field has a damage css_class and no "%" postfix.
+    if (isActive) {
+        const dmgKey = ["Damage", "ImpactDamage"].find((k) => {
+            const pr = props[k];
+            return /tech_damage|bullet_damage/.test(pr?.css_class || "") && !String(pr?.postfix || "").includes("%") && pf(pr?.value) > 0;
+        });
+        if (dmgKey) {
+            const pr = props[dmgKey];
+            add({
+                kind: "activeDamage",
+                damageType: pr.css_class === "tech_damage" ? "spirit" : "weapon",
+                value: pf(pr.value),
+                spiritScale: spiritScaleOf(pr),
+            });
+        }
+    }
+
+    // Charge-up / current-health bonus damage on a passive item (Tankbuster: +40 flat plus
+    // 8% of the target's health, ignores Spirit Resist, after a charge-up). For a calculator
+    // we assume the breakpoint is met and show the ideal full-health number, always on.
+    const healthDmgKey = Object.keys(props).find((k) => /HealthDamage$/i.test(k) && /tech_damage|bullet_damage/.test(props[k]?.css_class || "") && String(props[k]?.postfix || "").includes("%"));
+    if (healthDmgKey) {
+        const pctV = pf(props[healthDmgKey]?.value);
+        if (pctV) add({
+            kind: "activeDamage",
+            damageType: props[healthDmgKey].css_class === "tech_damage" ? "spirit" : "weapon",
+            value: pf(props.Damage?.value) || 0,
+            healthPctDamage: pctV,
+            ignoreResist: true,
+            alwaysOn: true,
+        });
     }
 
     // Flat headshot bonus (e.g. Headshot Booster +45, Headhunter +75)
@@ -250,7 +362,7 @@ async function main() {
     for (const it of upgrades) {
         const image = pickImage(it);
         const display = prettyName(it.name);
-        const eff = parseItemEffects(it.properties || {}, display);
+        const eff = parseItemEffects(it.properties || {}, display, !!it.is_active_item);
         // Imbue items attach to one ability. Mark them so the UI can offer an ability picker.
         const isImbue = /imbu/i.test(it.class_name || "") || /imbue an ability|imbued ability/i.test(it.description?.desc || "");
         if (isImbue) eff.push({ kind: "imbue", value: 0, itemName: display });
@@ -409,9 +521,12 @@ async function main() {
                 const best = keys.slice().sort((a, b) => parseFloat(p[b].value) - parseFloat(p[a].value))[0];
                 return best ? p[best] : undefined;
             };
-            // Per-second damage (DoT/turret) vs an instant direct hit.
-            const dps = pick(dmgKeys.filter((k) => /(DPS|PerSecond)$/i.test(k)), ["DPS", "TurretDPS", "PulseDPS"]);
-            const direct = pick(dmgKeys.filter((k) => !/(DPS|PerSecond)$/i.test(k)), ["Damage", "ImpactDamage", "BonusDamage"]);
+            // Per-second damage (DoT/turret/bleed) vs an instant direct hit. Bleed and
+            // per-stack/per-tick fields (Shiv Serrated Knives BleedDPSPerStack=10 over
+            // BleedDuration=5) are rates applied over a duration, not an instant hit.
+            const isRate = (k: string) => /(DPS|PerSecond|PerStack|PerTick)$/i.test(k) || /Bleed/i.test(k);
+            const dps = pick(dmgKeys.filter(isRate), ["DPS", "TurretDPS", "PulseDPS"]);
+            const direct = pick(dmgKeys.filter((k) => !isRate(k)), ["Damage", "ImpactDamage", "BonusDamage"]);
             const mainKey = direct ?? dps;
             const isTech = mainKey?.css_class === "tech_damage";
             const scale = num(mainKey?.scale_function?.value) ?? num(mainKey?.scale_function?.stat_scale) ?? 0;
@@ -420,15 +535,19 @@ async function main() {
             // Duration values arrive as strings (e.g. "5", "7"), so parse them; field name
             // varies by ability (burn/ground/debuff for true DoTs, lifetime/channel for zones).
             let dotDuration = 0;
+            let dotDurKey: string | undefined;
             if (dotDps > 0) {
-                const durCandidates = [
-                    p.AbilityDuration, p.Duration, p.BurnDuration, p.GroundFlameDuration,
-                    p.DebuffDuration, p.MaxLifetime, p.AbilityChannelTime,
+                // A true DoT duration (burn/bleed/ground) beats AbilityChannelTime, which is
+                // the cast/channel window (Serrated Knives channels 0.2s but bleeds for 5s).
+                const durKeys = [
+                    "AbilityDuration", "Duration", "BurnDuration", "GroundFlameDuration",
+                    "DebuffDuration", "BleedDuration", "MaxLifetime", "AbilityChannelTime",
                 ];
-                for (const d of durCandidates) {
-                    const v = parseFloat(d?.value);
+                for (const k of durKeys) {
+                    const v = parseFloat(p[k]?.value);
                     if (v && v > 0) {
                         dotDuration = v;
+                        dotDurKey = k;
                         break;
                     }
                 }
@@ -479,6 +598,27 @@ async function main() {
             if (executePct != null) { meta.executePct = executePct; meta.executeKind = executeKind; }
             const scalingJson = Object.keys(meta).length ? JSON.stringify(meta) : null;
 
+            // Ability-rank profile: precompute stats at ranks 0–3 + readable tier text. The
+            // damage upgrades match the property the engine reads (direct/dps); display
+            // dimensions match the field we surfaced. Stored as JSON, indexed by rank.
+            const directKey = dmgKeys.find((k) => p[k] === direct);
+            const dpsKey = dmgKeys.find((k) => p[k] === dps);
+            const rangeKey = firstPos(p.AbilityCastRange) ? "AbilityCastRange" : firstPos(p.Radius) ? "Radius" : undefined;
+            const durKey = firstPos(p.AbilityDuration) ? "AbilityDuration" : firstPos(p.AbilityChannelTime) ? "AbilityChannelTime" : undefined;
+            const baseProfile: RankStats = {
+                damage: num(direct) ?? 0,
+                scale: isTech ? scale : 0,
+                dotDps,
+                dotDuration,
+                range,
+                duration,
+                charges: chargesRaw,
+                cooldown: num(p.AbilityCooldown),
+            };
+            const profile = buildRankProfile(baseProfile, ab.upgrades ?? [], { directKey, dpsKey, dotDurKey, rangeKey, durKey });
+            // Store only when a tier actually carries a change to show or apply.
+            const upgradesJson = profile.tiers.some((t) => t.length) ? JSON.stringify(profile) : null;
+
             db.insert(abilities)
                 .values({
                     heroId: hero.id,
@@ -497,6 +637,7 @@ async function main() {
                     damageKind,
                     imageUrl: ab.image_webp || ab.image || null,
                     properties: scalingJson,
+                    upgrades: upgradesJson,
                 })
                 .run();
             abilityCount++;

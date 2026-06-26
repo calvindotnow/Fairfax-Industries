@@ -12,7 +12,7 @@ const item = (name: string) => items.find((i) => i.name === name)!;
 const byCategoryDesc = (cat: string) =>
     items.filter((i) => i.category === cat).sort((a, b) => b.soulCost - a.soulCost);
 
-const opts = (over: Partial<{ range: number; shots: number; headshots: number; disabledAbilityIds: number[]; hittingEnemy: boolean; resistDebuffs: boolean; activesFiring: boolean; stacksByItem: Record<number, number>; accuracy: number; headshotPct: number }> = {}) => ({
+const opts = (over: Partial<{ range: number; shots: number; headshots: number; disabledAbilityIds: number[]; hittingEnemy: boolean; resistDebuffs: boolean; activesFiring: boolean; stacksByItem: Record<number, number>; accuracy: number; headshotPct: number; abilityRanks: Record<number, number>; excludedActiveItemIds: number[] }> = {}) => ({
     range: 15,
     shots: 8,
     headshots: 0,
@@ -143,6 +143,49 @@ describe("combat-scenario conditionals", () => {
         expect(on.sustainedDps).toBeGreaterThan(off.sustainedDps);
     });
 
+    test("active items' direct damage (Arctic Blast) hits burst only while actives fire, but always lists in spiritItemDamage", () => {
+        const off = simulate({ hero: hero("Shiv"), items: [item("Arctic Blast")] }, { hero: hero("Abrams") }, opts({ range: 10 }));
+        const on = simulate({ hero: hero("Shiv"), items: [item("Arctic Blast")] }, { hero: hero("Abrams") }, opts({ range: 10, activesFiring: true }));
+        expect(on.burst.total).toBeGreaterThan(off.burst.total);
+        expect(off.spiritItemDamage.some((s) => /Arctic Blast/.test(s.name))).toBe(true);
+    });
+
+    test("excludedActiveItemIds removes exactly that active's direct-damage contribution", () => {
+        const arctic = item("Arctic Blast");
+        const cold = item("Cold Front");
+        // Same loadout both times — only the exclusion toggle differs — so the only thing that
+        // changes is Arctic Blast's own on-cast damage (its passive stats still apply either way).
+        const both = simulate({ hero: hero("Shiv"), items: [arctic, cold] }, { hero: hero("Abrams") }, opts({ range: 10, activesFiring: true }));
+        const noArctic = simulate({ hero: hero("Shiv"), items: [arctic, cold] }, { hero: hero("Abrams") }, opts({ range: 10, activesFiring: true, excludedActiveItemIds: [arctic.id] }));
+        const arcticDmg = both.burst.procs.find((p) => (p.name ?? "").includes("Arctic Blast"))!.dmg;
+        expect(arcticDmg).toBeGreaterThan(0);
+        expect(both.burst.total - noArctic.burst.total).toBeCloseTo(arcticDmg, 1);
+        expect(noArctic.burst.procs.some((p) => (p.name ?? "").includes("Arctic Blast"))).toBe(false);
+    });
+
+    test("excluding every damage active equals 'Actives firing' off", () => {
+        const arctic = item("Arctic Blast");
+        const cold = item("Cold Front");
+        const off = simulate({ hero: hero("Shiv"), items: [arctic, cold] }, { hero: hero("Abrams") }, opts({ range: 10 }));
+        const allExcluded = simulate({ hero: hero("Shiv"), items: [arctic, cold] }, { hero: hero("Abrams") }, opts({ range: 10, activesFiring: true, excludedActiveItemIds: [arctic.id, cold.id] }));
+        expect(allExcluded.burst.total).toBeCloseTo(off.burst.total, 1);
+    });
+
+    test("excludedActiveItemIds does not affect always-on (Tankbuster) damage", () => {
+        const tb = item("Tankbuster");
+        const base = simulate({ hero: hero("Haze"), items: [tb] }, { hero: hero("Abrams") }, opts());
+        const excluded = simulate({ hero: hero("Haze"), items: [tb] }, { hero: hero("Abrams") }, opts({ excludedActiveItemIds: [tb.id] }));
+        // Tankbuster is alwaysOn — exclusion can't touch it.
+        expect(excluded.burst.total).toBeCloseTo(base.burst.total, 1);
+    });
+
+    test("Tankbuster adds always-on health-percent damage that ignores resist", () => {
+        const r = simulate({ hero: hero("Haze"), items: [item("Tankbuster")] }, { hero: hero("Abrams") }, opts());
+        const tb = r.spiritItemDamage.find((s) => /Tankbuster/.test(s.name));
+        expect(tb).toBeDefined();
+        expect(tb!.value).toBeGreaterThan(40); // 40 flat + 8% of the target's max health
+    });
+
     test("accuracy scales sustained DPS but not burst", () => {
         const full = simulate({ hero: hero("Haze"), items: [] }, { hero: hero("Abrams") }, opts({ accuracy: 100 }));
         const half = simulate({ hero: hero("Haze"), items: [] }, { hero: hero("Abrams") }, opts({ accuracy: 50 }));
@@ -172,6 +215,28 @@ describe("abilities", () => {
         expect(storm.isDot).toBe(true);
         expect(storm.display.endsWith("/s")).toBe(true);
         expect(storm.burstDamage).toBe(0); // DoT excluded from instant burst
+    });
+
+    test("Serrated Knives bleed is a multi-second DoT, not an instant hit", () => {
+        const r = simulate({ hero: hero("Shiv"), items: [] }, { hero: hero("Abrams") }, opts());
+        const sk = r.abilities.find((a) => /Serrated Knives/.test(a.name))!;
+        expect(sk.isDot).toBe(true);
+        expect(sk.dotPerSec).toBeGreaterThan(0);
+        expect(sk.burstDamage).toBe(0); // bleed isn't an instant hit
+        expect(sk.dotFull).toBeGreaterThan(sk.dotPerSec); // spans multiple seconds
+    });
+
+    test("ranking up an ability applies its tier upgrades (Serrated Knives bleed grows at T3)", () => {
+        const shiv = hero("Shiv");
+        const sk = shiv.abilities.find((a) => /Serrated Knives/.test(a.name))!;
+        const r0 = simulate({ hero: shiv, items: [] }, { hero: hero("Abrams") }, opts());
+        const r3 = simulate({ hero: shiv, items: [] }, { hero: hero("Abrams") }, opts({ abilityRanks: { [sk.id]: 3 } }));
+        const b0 = r0.abilities.find((a) => a.id === sk.id)!;
+        const b3 = r3.abilities.find((a) => a.id === sk.id)!;
+        expect(b0.rank).toBe(0);
+        expect(b3.rank).toBe(3);
+        expect(b3.maxRank).toBe(3);
+        expect(b3.dotFull).toBeGreaterThan(b0.dotFull); // +12 bleed DPS and +2s duration at higher ranks
     });
 
     test("disabling an ability removes it from the burst total", () => {
