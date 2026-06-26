@@ -17,7 +17,12 @@ export default async function HomePage() {
     <div className="space-y-20">
       {/* Hero */}
       <section className="max-w-2xl">
-        <p className="overline mb-5">Deadlock theorycrafting</p>
+        <p className="overline mb-5 inline-flex items-center gap-2">
+          Deadlock theorycrafting
+          <span className="rounded-full border border-primary/40 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-primary">
+            BETA
+          </span>
+        </p>
         <h1 className="font-display text-5xl md:text-6xl leading-[1.05] text-foreground">
           Build it.{" "}
           <span className="italic text-primary">Prove</span> it.
@@ -37,6 +42,13 @@ export default async function HomePage() {
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
           </Link>
         </div>
+        <p className="mt-7 max-w-xl text-sm leading-relaxed text-muted-foreground">
+          <span className="font-medium text-foreground">First release — this is beta.</span>{" "}
+          Some numbers may be off and rough edges remain; apologies in advance.
+          It&apos;s a solo project, and I&apos;m fixing bugs and edge cases as they
+          turn up — so if something looks wrong, it probably is. Tell me and I&apos;ll
+          sort it.
+        </p>
       </section>
 
       {/* Roster strip */}

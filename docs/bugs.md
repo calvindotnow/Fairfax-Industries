@@ -1,8 +1,8 @@
-# Bugs & known limitations
+# Bugs, known limitations & internal debt
 
 The single bug log for Fairfax Industries. Log new bugs here as **Problem → Why → Fix idea**.
-The original "100 users" audit has been worked through — the items below are what genuinely
-remains; everything else from that pass shipped (see [features.md](features.md)).
+Most of the original audit has shipped; the items below are what genuinely remains as of
+the first (beta) release. Features/roadmap live in [features.md](features.md).
 
 Severity: 🔴 blocks a cohort · 🟠 major friction / trust · 🟡 polish / edge case
 
@@ -11,19 +11,29 @@ Severity: 🔴 blocks a cohort · 🟠 major friction / trust · 🟡 polish / e
 ## Open
 
 - 🟡 **Share codes can drift across patches** — codes reference items/heroes positionally, so a link made before a patch can resolve to the wrong item after the pool changes. VERSION 2 narrowed this, but it isn't fully patch-stable. *Fix idea:* encode a stable id (the API `class_name`) or warn on a version/patch mismatch. (`src/lib/build-code.ts`)
-- 🟡 **No caching (perf, not correctness)** — both routes are `force-dynamic` (`Cache-Control: no-store`), so every visit re-reads the DB and re-renders. *Fix idea:* ISR / cached queries revalidated on sync (tracked as a feature in [features.md](features.md)).
 
 ## Known engine approximations (documented, intentional)
 
-These are scope limits, not bugs — surfaced on `/methodology`. Tightening them is "deeper engine" work in [features.md](features.md).
+Scope limits, not bugs — surfaced on `/methodology`. Tightening them is "deeper engine" work in [features.md](features.md).
 
-- **Melee** models only base light/heavy (no +50% weapon-damage scaling, no melee-damage items, no separate melee-resist channel).
-- **Item stacking buffs** (Berserker, Glass Cannon) and **active items as combo steps** aren't modeled.
+- **Active items that deal direct damage** aren't folded into the burst as combo steps (their on-cast *self-buffs* — fire rate, etc. — are modeled via "Actives firing").
+- **Imbue** shows the relationship (which ability is imbued) but doesn't recompute that ability's numbers yet.
+- **%-of-health ability damage** (Vyper missing-health, current-health scalers) isn't shown as a flat number.
+- A few **stacking items** are recognized but display-only (spirit-damage amp like Escalating Exposure, heal-per-stack like Restorative Locket) — their slider shows, but the effect isn't in the damage number.
 
-## Infra limitation (not a code bug)
+## Internal debt (no user impact)
 
-- 🟠 **File-based SQLite won't survive serverless** — `deadlock.db` is read at request time from the local filesystem; a public deploy needs a managed DB (tracked under hosting in [features.md](features.md)).
+Flagged by the pre-launch review; deliberately deferred to avoid launch-eve churn.
+
+- **`ItemEffect` is a grab-bag union** — one interface with many optional fields (`stat`, `maxStacks`, `baseValue`, `spiritScale`, …) across 8 kinds. *Fix idea:* split into a discriminated union per kind so each shape is explicit. (`src/lib/sim/types.ts`)
+- **Execute-threshold data rides in `deriveAbilityScaling`** — a "scaling" helper also returns execute info (co-located in the ability `properties` blob). *Fix idea:* a dedicated `abilityExecute()` accessor or a first-class column. (`src/lib/sim/engine.ts`)
+- **Ability damage detection uses a css_class match + a `NON_DAMAGE` name blocklist** — pragmatic (the API has no clean damage flag and damage lives in ~90 property names), but the blocklist needs eyes when a patch adds new property names. (`scripts/sync-deadlock-api.ts`)
 
 ---
 
-*Resolved since the original audit (for reference): mobile/touch overflow, hover-only item stats, the "Proving Ground" naming split, the landing "compare builds" copy mismatch, headshots-exceed-shots, silent copy-link no-op, unclickable roster portraits, missing data-freshness indicator, no onboarding, no "show your work", missing hero/item pages — all shipped.*
+*Resolved (for reference): mobile/touch overflow, hover-only item stats, the "Proving Ground"
+naming split, headshots-exceed-shots, silent copy-link no-op, missing data-freshness indicator,
+no onboarding, no "show your work", missing hero/item pages, the proc/shotgun over-count, the
+missing base-headshot multiplier, Burst-Fire double-count, fuller melee, item stacking,
+**and the whole hosting story** — the runtime database is gone (data baked into the build), pages
+are static where possible, and a scheduled Action keeps data fresh. See [features.md](features.md).*
