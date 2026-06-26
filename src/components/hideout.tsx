@@ -91,6 +91,10 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     const [range, setRange] = useState(initialBuild?.range ?? 25);
     const [shots, setShots] = useState(initialBuild?.shots ?? 8);
     const [headshots, setHeadshots] = useState(initialBuild?.headshots ?? 0);
+    // Combat-scenario toggles — feed conditional item effects (Burst Fire, resist debuffs, actives).
+    const [hittingEnemy, setHittingEnemy] = useState(true);
+    const [resistDebuffs, setResistDebuffs] = useState(true);
+    const [activesFiring, setActivesFiring] = useState(false);
 
     // The attacker loadout the whole tool reads/writes: build A normally, build B
     // while comparing and editing B. Switching activeBuild swaps what's on screen.
@@ -205,14 +209,14 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     const targetEquipped = useMemo(() => targetLoadout.map((id) => items.find((i) => i.id === id)!).filter(Boolean), [targetLoadout, items]);
 
     // Both builds run against the same hero, target, and scenario.
-    const sharedSim = { hero, target, targetEquipped, matchTargetLevel, range, shots, headshots, disabledAbilities };
+    const sharedSim = { hero, target, targetEquipped, matchTargetLevel, range, shots, headshots, disabledAbilities, hittingEnemy, resistDebuffs, activesFiring };
     const simAttacker = (atkItems: ItemWithModifiers[]) =>
         !hero || !target
             ? null
             : simulate(
                   { hero, items: atkItems },
                   { hero: target, items: targetEquipped, matchAttackerLevel: matchTargetLevel },
-                  { range, shots, headshots, disabledAbilityIds: [...disabledAbilities] }
+                  { range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring }
               );
     /* eslint-disable react-hooks/exhaustive-deps */
     const resultA = useMemo(() => simAttacker(equippedA), [equippedA, sharedSim]);
@@ -496,6 +500,18 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                         <input type="range" min={0} max={80} step={1} value={range} onChange={(e) => setRange(Number(e.target.value))}
                             style={{ flex: 1, accentColor: "var(--brass-500)" }} />
                         <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 14, color: "var(--text)", width: 44, textAlign: "right" }}>{range} m</span>
+                    </div>
+                    {/* Combat scenario — toggles that drive conditional item effects (one place). */}
+                    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7, marginBottom: 16 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--text-dim)", marginRight: 2 }}>Scenario</span>
+                        <ScenarioChip label="In close range" on={range <= 15} onClick={() => setRange(range <= 15 ? 25 : 8)}
+                            tip="Range-bound items (Close Quarters, Sharpshooter, Point Blank) react to the range above. Snaps close (8 m) / ranged (25 m)." />
+                        <ScenarioChip label="Hitting enemy" on={hittingEnemy} onClick={() => setHittingEnemy((v) => !v)}
+                            tip="Activated fire-rate tiers fire while you're hitting an enemy hero (e.g. Burst Fire 10% → 32%)." />
+                        <ScenarioChip label="Resist debuffs" on={resistDebuffs} onClick={() => setResistDebuffs((v) => !v)}
+                            tip="Your resist-reduction items (Crippling Headshot, Bullet Resist Shredder) are lowering the target's resists." />
+                        <ScenarioChip label="Actives firing" on={activesFiring} onClick={() => setActivesFiring((v) => !v)}
+                            tip="Assume your active items are firing. (Active-item combos are modeled in a later pass.)" />
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
                         <StatReadout label="Sustained DPS" value={fmt(result.sustainedDps)} unit="dps" accent tip={`Damage per second firing continuously at this range (fire rate × damage per shot, after the target's resists)${result.procDps > 0 ? `, including ${fmt(result.procDps)} from on-hit procs` : ""}.`} />
@@ -1002,6 +1018,21 @@ function HeroSelect({ heroes, value, onChange, accentColor, align = "left" }: { 
                 {heroes.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
             </select>
         </div>
+    );
+}
+
+function ScenarioChip({ label, on, onClick, tip }: { label: string; on: boolean; onClick: () => void; tip: string }) {
+    return (
+        <button type="button" onClick={onClick} aria-pressed={on} title={tip}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 26, padding: "0 10px", cursor: "pointer", borderRadius: "var(--r-pill)",
+                fontFamily: "var(--font-archivo)", fontSize: 11.5, letterSpacing: "0.01em", whiteSpace: "nowrap",
+                color: on ? "var(--brass-300)" : "var(--text-dim)",
+                border: `1px solid ${on ? "var(--border-brass)" : "var(--border-strong)"}`,
+                background: on ? "color-mix(in srgb, var(--brass-500) 14%, transparent)" : "transparent",
+                transition: "color 120ms, background 120ms, border-color 120ms" }}>
+            <span aria-hidden style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: on ? "var(--brass-400)" : "var(--border-strong)", boxShadow: on ? "0 0 6px var(--brass-400)" : "none" }} />
+            {label}
+        </button>
     );
 }
 

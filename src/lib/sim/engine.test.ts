@@ -12,7 +12,7 @@ const item = (name: string) => items.find((i) => i.name === name)!;
 const byCategoryDesc = (cat: string) =>
     items.filter((i) => i.category === cat).sort((a, b) => b.soulCost - a.soulCost);
 
-const opts = (over: Partial<{ range: number; shots: number; headshots: number; disabledAbilityIds: number[] }> = {}) => ({
+const opts = (over: Partial<{ range: number; shots: number; headshots: number; disabledAbilityIds: number[]; hittingEnemy: boolean; resistDebuffs: boolean; activesFiring: boolean }> = {}) => ({
     range: 15,
     shots: 8,
     headshots: 0,
@@ -104,6 +104,20 @@ describe("item effects in burst", () => {
         const withHs = simulate({ hero: hero("Haze"), items: [item("Headshot Booster")] }, { hero: hero("Abrams") }, opts({ headshots: 3 }));
         expect(withHs.burst.headshotExtra).toBeGreaterThan(0);
         expect(noHs.burst.headshotExtra).toBe(0);
+    });
+});
+
+describe("combat-scenario conditionals", () => {
+    test("Burst Fire lifts fire rate only while hitting an enemy (no double-count)", () => {
+        const off = simulate({ hero: hero("Haze"), items: [item("Burst Fire")] }, { hero: hero("Abrams") }, opts({ range: 10 }));
+        const on = simulate({ hero: hero("Haze"), items: [item("Burst Fire")] }, { hero: hero("Abrams") }, opts({ range: 10, hittingEnemy: true }));
+        expect(on.sustainedDps).toBeGreaterThan(off.sustainedDps);
+    });
+
+    test("resist-debuff items lower the target's resist only when applied", () => {
+        const off = simulate({ hero: hero("Haze"), items: [item("Crippling Headshot")] }, { hero: hero("Abrams") }, opts({ range: 10 }));
+        const on = simulate({ hero: hero("Haze"), items: [item("Crippling Headshot")] }, { hero: hero("Abrams") }, opts({ range: 10, resistDebuffs: true }));
+        expect(on.burst.total).toBeGreaterThan(off.burst.total);
     });
 });
 

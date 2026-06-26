@@ -19,13 +19,17 @@ export interface StatModifier {
 
 /** A direct-damage effect an item adds (proc, conditional flat/percent add). */
 export interface ItemEffect {
-    kind: "onHitProc" | "onHitFlat" | "conditionalWeaponPct";
+    kind: "onHitProc" | "onHitFlat" | "conditionalWeaponPct" | "conditionalFireRate" | "targetResistReduction";
     damageType?: DamageType;
     value: number;
     valueType?: "flat" | "percentOfShot";
     condition?: "headshot";
     procCooldown?: number; // seconds; 0 = every shot
     spiritScale?: number; // bonus per point of Spirit Power (e.g. Mystic Shot 1.2)
+    // conditionalFireRate: `value` = activated fire-rate %, `baseValue` = the always-on
+    // baseline % (already a normal modifier). When "hitting enemy", the bonus becomes
+    // `value` instead of `baseValue` (Burst Fire: 10% → 32%, never both).
+    baseValue?: number;
     rangeMin?: number; // meters
     rangeMax?: number; // meters
     itemName?: string;
@@ -137,6 +141,10 @@ export interface SimOptions {
     shots: number;
     headshots: number;
     disabledAbilityIds?: number[];
+    // Combat-scenario toggles (see the scenario panel). Default false/off.
+    hittingEnemy?: boolean;   // activated fire-rate tiers (Burst Fire) + on-hit conditions
+    resistDebuffs?: boolean;  // apply the attacker's resist-reduction items to the target
+    activesFiring?: boolean;  // active-item effects are firing (reserved for active-combo modeling)
 }
 
 export interface AbilityRow {

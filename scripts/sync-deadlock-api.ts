@@ -162,6 +162,22 @@ function parseItemEffects(props: Record<string, any>, itemName: string) {
         if (v) add({ kind: "conditionalWeaponPct", value: v, rangeMax: max });
     }
 
+    // Burst Fire dual-rate: a baseline fire-rate bonus that jumps to a higher value
+    // while hitting an enemy hero (not both — it replaces). value = activated, baseValue = baseline.
+    const activated = pf(props.ActivatedFireRate?.value);
+    if (activated) {
+        const baseline = pf(props.BonusFireRate?.value) || 0;
+        add({ kind: "conditionalFireRate", value: activated, baseValue: baseline });
+    }
+
+    // Resist-debuff items: reduce the TARGET's bullet/spirit resist (e.g. Crippling
+    // Headshot, Bullet Resist Shredder). Stored as a positive reduction amount.
+    // parseFloat(undefined) is NaN (not nullish), so use || to fall through to the alt name.
+    const bulletRed = pf(props.BulletResistReduction?.value) || pf(props.BulletArmorReduction?.value);
+    if (bulletRed && bulletRed < 0) add({ kind: "targetResistReduction", damageType: "weapon", value: Math.abs(bulletRed) });
+    const spiritRed = pf(props.MagicResistReduction?.value);
+    if (spiritRed && spiritRed < 0) add({ kind: "targetResistReduction", damageType: "spirit", value: Math.abs(spiritRed) });
+
     return effects;
 }
 
@@ -232,6 +248,11 @@ async function main() {
         const props = it.properties || {};
         for (const key of Object.keys(props)) {
             const pr = props[key];
+            // Conditionally-applied properties are NOT permanent stats (e.g. Burst Fire's
+            // activated +32% fire rate, an active item's on-cast buff). Skip them here so
+            // they don't inflate the build; the ones we model are re-emitted as conditional
+            // effects in parseItemEffects.
+            if (Array.isArray(pr?.usage_flags) && pr.usage_flags.includes("ConditionallyApplied")) continue;
             const map = pr?.provided_property_type ? MOD_MAP[pr.provided_property_type] : undefined;
             const value = Number(pr?.value);
             if (!map || !value) continue;

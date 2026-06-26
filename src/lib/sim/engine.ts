@@ -301,6 +301,23 @@ function conditionalWeaponMult(
     return (1 + (sumItemWeaponPct + condPct) / 100) / (1 + sumItemWeaponPct / 100);
 }
 
+/**
+ * Multiplier that lifts the already-computed fire rate from its baseline tier to
+ * its activated tier (Burst Fire: 10% → 32% while hitting an enemy). Fire-rate %
+ * stacks additively, so we recover the additive sum and add the activated delta.
+ */
+function conditionalFireRateMult(items: ItemData[], effects: ItemEffect[]): number {
+    const delta = effects
+        .filter((e) => e.kind === "conditionalFireRate")
+        .reduce((s, e) => s + (e.value - (e.baseValue ?? 0)), 0);
+    if (delta === 0) return 1;
+    const baseSum = items
+        .flatMap((it) => it.modifiers ?? [])
+        .filter((m) => m.statName === "weaponFireRate")
+        .reduce((s, m) => s + (m.percentBonus ?? 0), 0);
+    return (1 + (baseSum + delta) / 100) / (1 + baseSum / 100);
+}
+
 // ─── Burst ────────────────────────────────────────────────────────────────────
 function computeBurst(
     opts: SimOptions,
@@ -396,6 +413,22 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
     const targetLevel = target.matchAttackerLevel ? level : levelFromSouls(targetSoulsSpent);
     const targetInv = investmentFor(targetItems);
     const targetStats = calculateStats(applyLevel(target.hero, targetLevel), [...targetItems, { modifiers: targetInv.mods }]);
+
+    // ── Combat-scenario conditionals ──────────────────────────────────────────
+    // Activated fire-rate tier (Burst Fire) kicks in while hitting an enemy hero.
+    if (opts.hittingEnemy) {
+        heroStats.weaponFireRate = (heroStats.weaponFireRate ?? 0) * conditionalFireRateMult(items, effects);
+    }
+    // The attacker's resist-reduction items lower the target's resists. Resist can go
+    // negative (damage amplification), which the mitigation factors handle naturally.
+    if (opts.resistDebuffs) {
+        const reduce = (dt: "weapon" | "spirit") =>
+            effects.filter((e) => e.kind === "targetResistReduction" && e.damageType === dt).reduce((s, e) => s + e.value, 0);
+        const rb = reduce("weapon");
+        const rs = reduce("spirit");
+        if (rb) targetStats.bulletResist = (targetStats.bulletResist ?? 0) - rb;
+        if (rs) targetStats.spiritResist = (targetStats.spiritResist ?? 0) - rs;
+    }
 
     const combat = calculateWeaponHit(heroStats, hero, targetStats, opts.range);
     const cwm = conditionalWeaponMult(items, effects, opts.range, inv.weaponPct);
