@@ -19,7 +19,7 @@ export interface StatModifier {
 
 /** A direct-damage effect an item adds (proc, conditional flat/percent add). */
 export interface ItemEffect {
-    kind: "onHitProc" | "onHitFlat" | "conditionalWeaponPct" | "conditionalFireRate" | "targetResistReduction" | "stacking";
+    kind: "onHitProc" | "onHitFlat" | "conditionalWeaponPct" | "conditionalFireRate" | "targetResistReduction" | "stacking" | "imbue";
     damageType?: DamageType;
     value: number;
     // stacking: `value` = per-stack amount, `stat` = the stat it boosts, `maxStacks` = cap.

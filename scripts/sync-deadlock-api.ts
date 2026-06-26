@@ -234,6 +234,9 @@ async function main() {
         const image = pickImage(it);
         const display = prettyName(it.name);
         const eff = parseItemEffects(it.properties || {}, display);
+        // Imbue items attach to one ability. Mark them so the UI can offer an ability picker.
+        const isImbue = /imbu/i.test(it.class_name || "") || /imbue an ability|imbued ability/i.test(it.description?.desc || "");
+        if (isImbue) eff.push({ kind: "imbue", value: 0, itemName: display });
         // Resolve this item's direct components (cheaper parts it's built from) to display names.
         const componentNames = Array.isArray(it.component_items)
             ? it.component_items

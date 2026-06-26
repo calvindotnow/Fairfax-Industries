@@ -99,6 +99,8 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     // freshly-equipped stacking item shows fully stacked; capped per item in the engine
     // and by the slider's max below.
     const [stacks, setStacks] = useState(99);
+    // Imbue assignments: imbue item id → the ability id it's attached to (one per ability).
+    const [imbueAssign, setImbueAssign] = useState<Record<number, number>>({});
 
     // The attacker loadout the whole tool reads/writes: build A normally, build B
     // while comparing and editing B. Switching activeBuild swaps what's on screen.
@@ -184,6 +186,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     // Reset to "ultimate off" defaults whenever the attacker hero changes.
     useEffect(() => {
         setDisabledAbilities(new Set(ultIdsOf(heroId)));
+        setImbueAssign({}); // ability ids change with the hero — drop stale imbue links
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [heroId]);
 
@@ -235,6 +238,19 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
         () => Math.max(0, ...equipped.flatMap((it) => parseEffects(it.effects)).filter((e) => e.kind === "stacking").map((e) => e.maxStacks ?? 0)),
         [equipped]
     );
+    // Equipped imbue items + a reverse map (ability id → the imbue attached to it).
+    const imbueItems = useMemo(
+        () => equipped.filter((it) => parseEffects(it.effects).some((e) => e.kind === "imbue")),
+        [equipped]
+    );
+    const imbuedBy = useMemo(() => {
+        const m = new Map<number, ItemWithModifiers>();
+        for (const it of imbueItems) {
+            const abilityId = imbueAssign[it.id];
+            if (abilityId != null) m.set(abilityId, it);
+        }
+        return m;
+    }, [imbueItems, imbueAssign]);
 
     // Build progression (FR-1): preview the active build at a purchase checkpoint —
     // the partial loadout you'd own by step N — without touching the live calculator.
@@ -484,6 +500,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                                             ? <Image src={a.imageUrl} alt="" width={32} height={32} style={{ width: 32, height: 32, objectFit: "contain", flexShrink: 0 }} />
                                             : <span style={{ width: 32, height: 32, borderRadius: "var(--r-sm)", background: "var(--surface-well)", flexShrink: 0 }} />}
                                         <span style={{ flex: 1, fontSize: 13.5, color: "var(--text)" }}>{a.name}</span>
+                                        {imbuedBy.get(a.id) && <span title={`Imbued with ${imbuedBy.get(a.id)!.name}`} style={{ fontSize: 11, color: "var(--spirit-400)" }}>⟡</span>}
                                         {a.isUltimate && <span style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--brass-400)" }}>ult</span>}
                                         <span style={{ fontFamily: "var(--font-numeric)", fontSize: 12, color: "var(--text-dim)", width: 40, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                                             {a.cooldown ? `${a.cooldown}s` : "—"}
@@ -499,6 +516,37 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                                 );
                             })}
                     </div>
+                    {imbueItems.length > 0 && hero.abilities && (
+                        <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
+                            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-dim)" }}>Imbues <span style={{ color: "var(--spirit-400)" }}>⟡</span></span>
+                            {imbueItems.map((it) => {
+                                const assigned = imbueAssign[it.id];
+                                return (
+                                    <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                        {it.imageUrl
+                                            ? <Image src={it.imageUrl} alt="" width={22} height={22} style={{ width: 22, height: 22, objectFit: "contain", flexShrink: 0 }} />
+                                            : <span style={{ width: 22, height: 22, borderRadius: "var(--r-xs)", background: "var(--surface-well)", flexShrink: 0 }} />}
+                                        <span style={{ flex: 1, fontSize: 12.5, color: "var(--text)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</span>
+                                        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>→</span>
+                                        <select value={assigned ?? ""}
+                                            onChange={(e) => {
+                                                const v = e.target.value ? Number(e.target.value) : null;
+                                                setImbueAssign((prev) => { const next = { ...prev }; if (v == null) delete next[it.id]; else next[it.id] = v; return next; });
+                                            }}
+                                            aria-label={`Imbue ${it.name} onto an ability`}
+                                            style={{ height: 28, padding: "0 8px", borderRadius: "var(--r-sm)", border: "1px solid var(--border-strong)", background: "var(--surface-raised)", color: assigned != null ? "var(--text)" : "var(--text-dim)", fontFamily: "var(--font-archivo)", fontSize: 12, maxWidth: 150, cursor: "pointer" }}>
+                                            <option value="">— pick ability —</option>
+                                            {hero.abilities.map((ab) => {
+                                                const takenByOther = Object.entries(imbueAssign).some(([iid, aid]) => Number(iid) !== it.id && aid === ab.id);
+                                                return <option key={ab.id} value={ab.id} disabled={takenByOther}>{ab.name}{takenByOther ? " (taken)" : ""}</option>;
+                                            })}
+                                        </select>
+                                    </div>
+                                );
+                            })}
+                            <span style={{ fontSize: 10.5, color: "var(--text-dim)", lineHeight: 1.4 }}>Shown as applied to the ability. Ability numbers aren&apos;t recomputed yet — that&apos;s a later pass.</span>
+                        </div>
+                    )}
                 </div>
 
                 {/* Damage calculator */}
