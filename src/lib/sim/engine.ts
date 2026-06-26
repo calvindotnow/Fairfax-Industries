@@ -304,6 +304,11 @@ function conditionalWeaponMult(
 // Stacking stats applied as a flat per-stack add; everything else stacks as a percent.
 const FLAT_STACK_STATS = new Set(["maxHealth", "sprintSpeed", "moveSpeed", "spiritPower", "stamina", "healthRegen"]);
 
+// Base headshot/crit multiplier — uniform 1.65× across all weapons in the current patch
+// (every hero's weapon crit_bonus_start = 1.65). A headshot multiplies the shot by this
+// before any flat headshot bonuses (Headshot Booster) are added.
+const HEADSHOT_MULT = 1.65;
+
 /**
  * Multiplier that lifts the already-computed fire rate from its baseline tier to
  * its activated tier (Burst Fire: 10% → 32% while hitting an enemy). Fire-rate %
@@ -355,8 +360,12 @@ function computeBurst(
     const headshotFlat = effects
         .filter((e) => e.condition === "headshot" && e.damageType === "weapon")
         .reduce((s, e) => s + e.value, 0);
-    // Headshots are crits — the target's crit_damage_received_scale reduces the bonus (e.g. Seven 0.45).
-    const headshotExtraPer = headshotFlat * falloffMultiplier * bulletRes * critScale;
+    // A headshot does the base 1.65× weapon multiplier (inherent to all weapons), plus any
+    // flat headshot bonuses (Headshot Booster). The bonus over a body shot is therefore
+    // 0.65 × the shot + the flat add. Both are "crit" damage, so the target's
+    // crit_damage_received_scale reduces them (e.g. Seven 0.45).
+    const baseCritBonusPer = effectiveDpb * (HEADSHOT_MULT - 1); // effectiveDpb is already falloff+resist-mitigated
+    const headshotExtraPer = (baseCritBonusPer + headshotFlat * falloffMultiplier * bulletRes) * critScale;
     const weaponDamage = (shots - hs) * effectiveDpb + hs * (effectiveDpb + headshotExtraPer);
 
     const fireRate = heroStats.weaponFireRate ?? 0;

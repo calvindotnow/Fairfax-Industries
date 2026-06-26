@@ -592,6 +592,16 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                             ))}
                         </div>
                     )}
+                    {/* Accuracy sits next to the sustained number it scales. */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)" }}>Accuracy</span>
+                            <InfoDot tip="Share of shots that land. Scales sustained DPS and time-to-kill — over a real fight, misses don't damage. Burst assumes your combo lands." />
+                        </span>
+                        <input type="range" min={0} max={100} step={1} value={accuracy} onChange={(e) => setAccuracy(Number(e.target.value))} aria-label="Accuracy percent"
+                            style={{ flex: 1, accentColor: "var(--brass-500)" }} />
+                        <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 14, color: "var(--text)", width: 44, textAlign: "right" }}>{accuracy}%</span>
+                    </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
                         <StatReadout label="Sustained DPS" value={fmt(result.sustainedDps)} unit="dps" accent tip={`Damage per second firing continuously at this range (fire rate × damage per shot, after the target's resists)${result.procDps > 0 ? `, including ${fmt(result.procDps)} from on-hit procs` : ""}${accuracy < 100 ? `, scaled by ${accuracy}% accuracy` : ""}.`} />
                         <StatReadout label="Time to kill" value={result.timeToKill != null ? result.timeToKill.toFixed(1) : "—"} unit="s" tip="Seconds to drop the target's effective HP at this range, firing continuously. “—” means sustained DPS can't finish them." />
@@ -611,7 +621,6 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                             <NumberField label="Shots" value={shots} onChange={(v) => { setShots(v); setHeadshots((h) => Math.min(h, v)); }} min={0} max={50} />
                             <NumberField label="Headshots" value={headshots} onChange={setHeadshots} min={0} max={shots} />
-                            <NumberField label="Accuracy %" value={accuracy} onChange={setAccuracy} min={0} max={100} />
                         </div>
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, paddingTop: 16, borderTop: "1px solid var(--border)" }}>

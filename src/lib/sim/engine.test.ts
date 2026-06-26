@@ -105,6 +105,14 @@ describe("item effects in burst", () => {
         expect(withHs.burst.headshotExtra).toBeGreaterThan(0);
         expect(noHs.burst.headshotExtra).toBe(0);
     });
+
+    test("headshots apply the base 1.65x weapon multiplier even with no headshot item", () => {
+        // Abrams takes normal crit damage (scale 1), so all-headshot weapon damage = 1.65× body.
+        const body = simulate({ hero: hero("Vindicta"), items: [] }, { hero: hero("Abrams") }, opts({ shots: 8, headshots: 0 }));
+        const head = simulate({ hero: hero("Vindicta"), items: [] }, { hero: hero("Abrams") }, opts({ shots: 8, headshots: 8 }));
+        expect(head.burst.headshotExtra).toBeGreaterThan(0);
+        expect(head.burst.weaponDamage / body.burst.weaponDamage).toBeCloseTo(1.65, 2);
+    });
 });
 
 describe("combat-scenario conditionals", () => {
