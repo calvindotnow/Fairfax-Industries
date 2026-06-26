@@ -235,10 +235,16 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     const equipped = activeBuild === "B" ? equippedB : equippedA;
     const result = activeBuild === "B" ? resultB : resultA;
     // Equipped stacking items + each one's own max (drives the per-item Stacks chips).
+    // `modeled` = at least one stacking effect maps to a stat the engine applies.
     const stackingItems = useMemo(
         () => equipped
-            .map((it) => { const e = parseEffects(it.effects).find((x) => x.kind === "stacking"); return e ? { item: it, max: e.maxStacks ?? 0 } : null; })
-            .filter((x): x is { item: ItemWithModifiers; max: number } => x != null && x.max > 0),
+            .map((it) => {
+                const effs = parseEffects(it.effects).filter((x) => x.kind === "stacking");
+                if (!effs.length) return null;
+                const max = Math.max(...effs.map((e) => e.maxStacks ?? 0));
+                return max > 0 ? { item: it, max, modeled: effs.some((e) => !!e.stat) } : null;
+            })
+            .filter((x): x is { item: ItemWithModifiers; max: number; modeled: boolean } => x != null),
         [equipped]
     );
     // Equipped imbue items + a reverse map (ability id → the imbue attached to it).
@@ -579,8 +585,8 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                     {stackingItems.length > 0 && (
                         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7, marginBottom: 16 }}>
                             <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--text-dim)", marginRight: 2 }}>Stacks</span>
-                            {stackingItems.map(({ item, max }) => (
-                                <StackChip key={item.id} name={item.name} max={max} value={Math.min(stacksByItem[item.id] ?? max, max)}
+                            {stackingItems.map(({ item, max, modeled }) => (
+                                <StackChip key={item.id} name={item.name} max={max} modeled={modeled} value={Math.min(stacksByItem[item.id] ?? max, max)}
                                     onChange={(n) => setStacksByItem((p) => ({ ...p, [item.id]: n }))} />
                             ))}
                         </div>
@@ -1093,12 +1099,13 @@ function HeroSelect({ heroes, value, onChange, accentColor, align = "left" }: { 
     );
 }
 
-function StackChip({ name, value, max, onChange }: { name: string; value: number; max: number; onChange: (n: number) => void }) {
+function StackChip({ name, value, max, modeled, onChange }: { name: string; value: number; max: number; modeled: boolean; onChange: (n: number) => void }) {
     const [open, setOpen] = useState(false);
     const full = value >= max;
     return (
         <span style={{ position: "relative", display: "inline-flex" }}>
-            <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} title={`${name} — set stacks (0–${max})`}
+            <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+                title={modeled ? `${name} — set stacks (0–${max})` : `${name} — recognized stacking item; its effect isn't in the damage number yet (0–${max})`}
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 26, padding: "0 10px", cursor: "pointer", borderRadius: "var(--r-pill)",
                     fontFamily: "var(--font-archivo)", fontSize: 11.5, whiteSpace: "nowrap", color: full ? "var(--brass-300)" : "var(--text-muted)",
                     border: `1px solid ${full ? "var(--border-brass)" : "var(--border-strong)"}`,
@@ -1118,6 +1125,7 @@ function StackChip({ name, value, max, onChange }: { name: string; value: number
                         <input type="range" min={0} max={max} step={1} value={value} onChange={(e) => onChange(Number(e.target.value))} aria-label={`${name} stacks`}
                             style={{ width: "100%", accentColor: "var(--brass-500)" }} />
                         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 10, color: "var(--text-dim)" }}><span>0</span><span>{max} stacks</span></div>
+                        {!modeled && <div style={{ marginTop: 8, fontSize: 10, lineHeight: 1.4, color: "var(--text-dim)" }}>Recognized as stacking — this item&apos;s effect isn&apos;t in the damage number yet.</div>}
                     </div>
                 </>
             )}

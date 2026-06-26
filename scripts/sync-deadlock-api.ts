@@ -178,21 +178,32 @@ function parseItemEffects(props: Record<string, any>, itemName: string) {
     const spiritRed = pf(props.MagicResistReduction?.value);
     if (spiritRed && spiritRed < 0) add({ kind: "targetResistReduction", damageType: "spirit", value: Math.abs(spiritRed) });
 
-    // Stacking items (Berserker, Glass Cannon): one or more *PerStack/*PerKill amounts +
-    // a MaxStacks cap. The stat is inferred from the property name (no provided_property_type).
-    // Iterate all matching keys — an item can have several (e.g. Glass Cannon: BonusClipPerKill
-    // which we ignore, plus FireRatePerKill which we keep).
+    // Stacking items: a MaxStacks cap plus per-stack amounts named either "*PerStack"/
+    // "*PerKill" (Berserker, Glass Cannon) or "Stacking*" (Trophy Collector). The stat is
+    // inferred from the property name. Skip degenerate caps (1 = not a slider; ~9999 = unlimited).
     const maxStacks = pf(props.MaxStacks?.value) || 0;
-    if (maxStacks) {
+    const isStackKey = (k: string) => /(PerStack|PerKill)$/i.test(k) || /^Stacking[A-Z]/.test(k);
+    if (maxStacks >= 2 && maxStacks <= 50) {
+        const statOf = (k: string): string | null =>
+            /FireRate/i.test(k) ? "weaponFireRate"
+            : /(WeaponPower|WeaponDamage|BaseAttack)/i.test(k) ? "bulletDamage"
+            : /Health/i.test(k) ? "maxHealth"
+            : /SprintSpeed/i.test(k) ? "sprintSpeed"
+            : /MoveSpeed/i.test(k) ? "moveSpeed"
+            : /(BulletResist|BulletArmor)/i.test(k) ? "bulletResist"
+            : /(SpiritResist|TechResist|MagicResist)/i.test(k) ? "spiritResist"
+            : /(SpiritPower|TechPower)/i.test(k) ? "spiritPower"
+            : null;
+        let emittedModeled = false;
         for (const k of Object.keys(props)) {
-            if (!/(PerStack|PerKill)$/i.test(k)) continue;
-            const perStack = pf(props[k]?.value);
-            const stat = /FireRate/i.test(k) ? "weaponFireRate"
-                : /(WeaponPower|WeaponDamage|BaseAttack)/i.test(k) ? "bulletDamage"
-                : /(Spirit|TechPower)/i.test(k) ? "spiritPower"
-                : null;
-            if (perStack && stat) add({ kind: "stacking", value: perStack, stat, maxStacks });
+            if (!isStackKey(k)) continue;
+            const perStack = pf(props[k]?.value); // tolerates unit suffixes ("0.15m")
+            const stat = statOf(k);
+            if (perStack && stat) { add({ kind: "stacking", value: perStack, stat, maxStacks }); emittedModeled = true; }
         }
+        // Display-only marker so the slider still appears for stacking items whose per-stack
+        // stat we don't model yet (e.g. Escalating Exposure's spirit-damage amp).
+        if (!emittedModeled && Object.keys(props).some(isStackKey)) add({ kind: "stacking", value: 0, maxStacks });
     }
 
     return effects;

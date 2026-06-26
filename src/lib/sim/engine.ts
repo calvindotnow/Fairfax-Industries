@@ -301,6 +301,9 @@ function conditionalWeaponMult(
     return (1 + (sumItemWeaponPct + condPct) / 100) / (1 + sumItemWeaponPct / 100);
 }
 
+// Stacking stats applied as a flat per-stack add; everything else stacks as a percent.
+const FLAT_STACK_STATS = new Set(["maxHealth", "sprintSpeed", "moveSpeed", "spiritPower", "stamina", "healthRegen"]);
+
 /**
  * Multiplier that lifts the already-computed fire rate from its baseline tier to
  * its activated tier (Burst Fire: 10% → 32% while hitting an enemy). Fire-rate %
@@ -413,7 +416,7 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
                 const max = e.maxStacks ?? 0;
                 const n = Math.min(opts.stacksByItem?.[it.id] ?? max, max);
                 const amt = n * e.value;
-                const flat = e.stat === "spiritPower";
+                const flat = FLAT_STACK_STATS.has(e.stat as string);
                 return { statName: e.stat as string, flatBonus: flat ? amt : 0, percentBonus: flat ? 0 : amt };
             })
     );
