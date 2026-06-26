@@ -115,6 +115,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
         (heroes.find((h) => h.id === id)?.abilities ?? []).filter((a) => a.type === "ultimate").map((a) => a.id);
     const [disabledAbilities, setDisabledAbilities] = useState<Set<number>>(() => new Set(ultIdsOf(startHeroId)));
     const [showCalc, setShowCalc] = useState(false);
+    const [overviewTab, setOverviewTab] = useState<"damage" | "vitality" | "spirit">("damage");
     // Build progression (FR-1): scrub the ordered purchase timeline. `checkpoint`
     // is an index into the active loadout being previewed (null = full build).
     const [checkpoint, setCheckpoint] = useState<number | null>(null);
@@ -570,7 +571,10 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
 
                 {/* Damage calculator */}
                 <div data-tour="damage" style={{ padding: 18, borderLeft: narrow ? "none" : "1px solid var(--border)", borderTop: narrow ? "1px solid var(--border)" : "none" }}>
-                    <SectionHead title="Damage" />
+                    <OverviewTabs active={overviewTab} onChange={setOverviewTab} />
+                    {overviewTab === "vitality" && <VitalityPanel hs={hs} hero={hero} meleeResist={equipped.reduce((s, it) => s + it.modifiers.filter((m) => m.statName === "meleeResist").reduce((a, m) => a + m.percentBonus, 0), 0)} critReductionPct={critReductionPct} fmt={fmt} />}
+                    {overviewTab === "spirit" && <SpiritPanel hs={hs} abilities={result.abilities} fmt={fmt} />}
+                    {overviewTab === "damage" && (<>
                     {(() => { const RMAX = 50; const pct = (m: number) => `${Math.min(100, (m / RMAX) * 100)}%`; return (
                     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
                         <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)", whiteSpace: "nowrap" }}>Range</span>
@@ -701,6 +705,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                             </div>
                         )}
                     </div>
+                    </>)}
                 </div>
             </div>
 
@@ -1140,6 +1145,99 @@ function HeroSelect({ heroes, value, onChange, accentColor, align = "left" }: { 
                 style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontFamily: "var(--font-archivo)", fontSize: 13, color: "var(--text)", textAlign: align === "right" ? "right" : "left", cursor: "pointer" }}>
                 {heroes.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
             </select>
+        </div>
+    );
+}
+
+function OverviewTabs({ active, onChange }: { active: "damage" | "vitality" | "spirit"; onChange: (t: "damage" | "vitality" | "spirit") => void }) {
+    const tabs = [
+        ["damage", "Damage", "var(--brass-300)"],
+        ["vitality", "Vitality", "var(--vitality-400)"],
+        ["spirit", "Spirit", "var(--spirit-400)"],
+    ] as const;
+    return (
+        <div style={{ display: "flex", gap: 2, marginBottom: 14, borderBottom: "1px solid var(--border)" }}>
+            {tabs.map(([key, label, color]) => {
+                const on = active === key;
+                return (
+                    <button key={key} type="button" onClick={() => onChange(key)} aria-pressed={on}
+                        style={{ padding: "7px 14px", cursor: "pointer", background: "transparent", border: "none", marginBottom: -1,
+                            borderBottom: `2px solid ${on ? color : "transparent"}`,
+                            fontFamily: "var(--font-oswald)", fontWeight: 600, fontSize: 14, letterSpacing: "0.06em", textTransform: "uppercase",
+                            color: on ? color : "var(--text-dim)" }}>
+                        {label}
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+function OverviewStat({ label, value, unit, color, tip }: { label: string; value: string; unit?: string; color?: string; tip?: string }) {
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)" }}>{label}</span>
+                {tip && <InfoDot tip={tip} />}
+            </span>
+            <span style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
+                <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 19, color: color ?? "var(--text)" }}>{value}</span>
+                {unit && <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{unit}</span>}
+            </span>
+        </div>
+    );
+}
+
+// Survivability dashboard — the defensive side of the build.
+function VitalityPanel({ hs, hero, meleeResist, critReductionPct, fmt }: {
+    hs: Record<string, number>; hero: HeroWithAbilities; meleeResist: number; critReductionPct: (s: number | null | undefined) => number; fmt: (n: number) => string;
+}) {
+    const ehp = (resist: number) => (hs.maxHealth ?? 0) / Math.max(1 - resist / 100, 0.05);
+    const headshotRed = critReductionPct(hero.critDamageReceivedScale);
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
+                <StatReadout label="EHP vs Weapons" value={fmt(Math.round(ehp(hs.bulletResist ?? 0)))} accent tip="Effective HP against bullet damage — your health scaled up by bullet resist." />
+                <StatReadout label="EHP vs Spirit" value={fmt(Math.round(ehp(hs.spiritResist ?? 0)))} accent tip="Effective HP against spirit damage — your health scaled up by spirit resist." />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "14px 12px" }}>
+                <OverviewStat label="Health" value={fmt(Math.round(hs.maxHealth ?? 0))} color="var(--vitality-400)" />
+                <OverviewStat label="Regen" value={fmt(Math.round((hs.healthRegen ?? 0) * 10) / 10)} unit="/s" />
+                <OverviewStat label="Stamina" value={fmt(Math.round(hs.stamina ?? 0))} />
+                <OverviewStat label="Bullet resist" value={`${Math.round(hs.bulletResist ?? 0)}%`} color="var(--weapon-400)" />
+                <OverviewStat label="Spirit resist" value={`${Math.round(hs.spiritResist ?? 0)}%`} color="var(--spirit-400)" />
+                {meleeResist > 0 && <OverviewStat label="Melee resist" value={`${Math.round(meleeResist)}%`} />}
+                <OverviewStat label="Move speed" value={(hs.moveSpeed ?? 0).toFixed(1)} unit="m/s" />
+                <OverviewStat label="Sprint speed" value={(hs.sprintSpeed ?? 0).toFixed(1)} unit="m/s" />
+                {headshotRed !== 0 && <OverviewStat label="Headshot taken" value={`${headshotRed > 0 ? "−" : "+"}${Math.abs(headshotRed)}%`} tip="Crit/headshot damage you take, relative to normal." />}
+            </div>
+        </div>
+    );
+}
+
+// Spirit power + ability-output summary.
+function SpiritPanel({ hs, abilities, fmt }: { hs: Record<string, number>; abilities: SimResult["abilities"]; fmt: (n: number) => string }) {
+    const spiritAbilities = abilities.filter((a) => a.damageType === "spirit");
+    const totalBurst = spiritAbilities.reduce((s, a) => s + a.burstDamage, 0);
+    const totalDot = spiritAbilities.reduce((s, a) => s + a.dotFull, 0);
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
+                <StatReadout label="Spirit Power" value={fmt(Math.round(hs.spiritPower ?? 0))} accent tip="Drives ability damage, range, and duration. Scales with level and spirit items." />
+                <StatReadout label="Ability burst" value={fmt(Math.round(totalBurst))} tip="Combined instant damage of your spirit abilities at the current Spirit Power (ultimates off unless toggled)." />
+                {totalDot > 0 && <StatReadout label="DoT total" value={fmt(Math.round(totalDot))} tip="Total damage if the target sits in all your damage-over-time for its full duration." />}
+            </div>
+            {spiritAbilities.length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {spiritAbilities.map((a) => (
+                        <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+                            <span style={{ flex: 1, color: "var(--text)" }}>{a.name}{a.isUltimate && <span style={{ marginLeft: 6, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--brass-400)" }}>ult</span>}</span>
+                            <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 12, color: "var(--text-dim)", width: 44, textAlign: "right" }}>{a.cooldown ? `${a.cooldown}s` : "—"}</span>
+                            <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 13, color: "var(--spirit-400)", width: 56, textAlign: "right" }}>{a.display}</span>
+                        </div>
+                    ))}
+                </div>
+            ) : <p style={{ fontSize: 13, color: "var(--text-dim)" }}>No spirit-damage abilities for this hero.</p>}
         </div>
     );
 }
