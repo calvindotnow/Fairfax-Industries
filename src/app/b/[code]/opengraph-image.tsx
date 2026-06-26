@@ -11,6 +11,9 @@ const C = {
   brass: "#e4c389", brass400: "#d6ab6e", danger: "#c5503e", border: "rgba(233,229,220,0.16)",
 };
 
+// A given share code always renders the same image → cache it hard.
+const CACHE = { "Cache-Control": "public, max-age=31536000, immutable" };
+
 export default async function OgImage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
   const b = await resolveBuild(code);
@@ -22,7 +25,7 @@ export default async function OgImage({ params }: { params: Promise<{ code: stri
           Build not found · Fairfax Industries
         </div>
       ),
-      size,
+      { ...size, headers: CACHE },
     );
   }
 
@@ -62,6 +65,6 @@ export default async function OgImage({ params }: { params: Promise<{ code: stri
         <div style={{ display: "flex", marginTop: 20, fontSize: 20, color: C.muted }}>fairfax.industries · Deadlock theorycrafting</div>
       </div>
     ),
-    size,
+    { ...size, headers: CACHE },
   );
 }

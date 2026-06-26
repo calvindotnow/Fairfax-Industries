@@ -27,7 +27,7 @@ export function HeroPicker({
           align={align === "right" ? "end" : "start"}
           sideOffset={8}
           style={{
-            width: 320, padding: 10, zIndex: 50,
+            width: 320, padding: 10, zIndex: 90, // above the sticky nav (z-50)
             background: "var(--surface-raised)", border: "1px solid var(--border-strong)",
             borderRadius: "var(--r-md, 10px)", boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
           }}
