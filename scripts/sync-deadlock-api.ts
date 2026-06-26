@@ -5,7 +5,7 @@
  * Source: https://api.deadlock-api.com/v1/assets  (open, community-run)
  * This replaces the hand-seeded placeholder heroes/items/abilities.
  */
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync } from "node:fs";
 import { eq } from "drizzle-orm";
 import { db } from "../src/db";
 import { heroes, abilities, items, itemStatModifiers } from "../src/db/schema";
@@ -515,14 +515,27 @@ async function main() {
 
     // Bake the data into a committed module the app imports at build time, so it runs
     // with no runtime database and deploys to any serverless host. Regenerated each sync.
+    const bakedPath = new URL("../src/lib/baked-data.json", import.meta.url);
     const bakedHeroes = await db.query.heroes.findMany({ with: { abilities: true }, orderBy: (h, { asc }) => [asc(h.name)] });
     const bakedItems = await db.query.items.findMany({ with: { modifiers: true }, orderBy: (i, { asc }) => [asc(i.tier), asc(i.name)] });
-    const bakedSnaps = await db.query.statSnapshots.findMany({ orderBy: (sn, { desc }) => [desc(sn.takenAt)], limit: 2 });
+    // Carry the previous baked snapshot forward as the "before" — db:reset wipes the
+    // snapshot table, so patch-notes' two-snapshot diff must persist via the baked file.
+    let prevSnaps: unknown[] = [];
+    try {
+        prevSnaps = (JSON.parse(readFileSync(bakedPath, "utf8")) as { snapshots?: unknown[] }).snapshots ?? [];
+    } catch { /* first run — no previous baked file */ }
+    const justCaptured = await db.query.statSnapshots.findMany({ orderBy: (sn, { desc }) => [desc(sn.takenAt)], limit: 1 });
+    const snapshots = [...justCaptured, ...prevSnaps].slice(0, 2);
+    // Drop per-row createdAt/updatedAt (unused at runtime, and they'd churn every sync
+    // even when the game data is unchanged — freshness comes from `syncedAt`).
     writeFileSync(
-        new URL("../src/lib/baked-data.json", import.meta.url),
-        JSON.stringify({ syncedAt: new Date().toISOString(), heroes: bakedHeroes, items: bakedItems, snapshots: bakedSnaps })
+        bakedPath,
+        JSON.stringify(
+            { syncedAt: new Date().toISOString(), heroes: bakedHeroes, items: bakedItems, snapshots },
+            (key, value) => (key === "createdAt" || key === "updatedAt" ? undefined : value)
+        )
     );
-    console.log(`  baked data → src/lib/baked-data.json (${bakedHeroes.length} heroes, ${bakedItems.length} items)`);
+    console.log(`  baked data → src/lib/baked-data.json (${bakedHeroes.length} heroes, ${bakedItems.length} items, ${snapshots.length} snapshots)`);
     console.log("Done.");
 }
 

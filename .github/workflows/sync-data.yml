@@ -1,0 +1,48 @@
+# Refresh the baked game data from deadlock-api on a schedule. Host-neutral:
+# this only re-syncs and commits src/lib/baked-data.json — whatever Git
+# integration you have connected (Cloudflare, Vercel, …) redeploys on the push.
+name: Sync game data
+
+on:
+  schedule:
+    - cron: "0 12 * * *" # daily at 12:00 UTC
+  workflow_dispatch: {} # allow manual runs
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-data
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      # Recreate the SQLite schema, pull fresh data, and regenerate the baked
+      # data module the app builds from.
+      - run: bun run db:reset
+
+      - name: Commit refreshed data (only when the game data actually changed)
+        run: |
+          git config user.name "fairfax-sync-bot"
+          git config user.email "actions@users.noreply.github.com"
+          # Compare only the game data (heroes + items) — the syncedAt timestamp and
+          # snapshot rows move every run, so ignore them and commit only on a real change.
+          git show HEAD:src/lib/baked-data.json | jq -S '{heroes, items}' > /tmp/old.json 2>/dev/null || echo '{}' > /tmp/old.json
+          jq -S '{heroes, items}' src/lib/baked-data.json > /tmp/new.json
+          if diff -q /tmp/old.json /tmp/new.json >/dev/null; then
+            echo "No game-data changes — skipping commit."
+          else
+            git add src/lib/baked-data.json
+            git commit -m "data: scheduled sync ($(date -u +%Y-%m-%d))"
+            git push
+          fi
