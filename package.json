@@ -21,7 +21,7 @@
     "drizzle-orm": "^0.45.1",
     "framer-motion": "^12.34.2",
     "lucide-react": "^0.574.0",
-    "next": "16.1.6",
+    "next": "16.2.9",
     "radix-ui": "^1.4.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -37,7 +37,7 @@
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.9",
     "eslint": "^9",
-    "eslint-config-next": "16.1.6",
+    "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
     "typescript": "^5"
   },
