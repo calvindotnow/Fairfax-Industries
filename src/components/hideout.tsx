@@ -410,7 +410,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                 <div style={{ display: "grid", gridTemplateColumns: narrow ? "1fr" : "1fr auto 1fr", gap: narrow ? 14 : 20, alignItems: "stretch", padding: narrow ? 14 : 18 }}>
                     {/* Attacker */}
                     <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: narrow ? "wrap" : "nowrap" }}>
-                        <HeroPicker heroes={heroes} value={heroId} onChange={setHeroId} accentColor="var(--brass-400)">
+                        <HeroPicker heroes={heroes} value={heroId} onChange={(id) => { setHeroId(id); setShotsTouched(false); }} accentColor="var(--brass-400)">
                           <button type="button" title="Change hero" aria-label="Change attacker hero" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", borderRadius: 8 }}>
                             <HeroPortrait imageUrl={hero.imageUrl} size={64} level={result.level} />
                           </button>
