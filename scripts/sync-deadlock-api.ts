@@ -105,21 +105,33 @@ function parseItemEffects(props: Record<string, any>, itemName: string) {
     const effects: any[] = [];
     const add = (e: any) => effects.push({ ...e, itemName });
     const pf = (v: any) => parseFloat(v); // tolerates "15m" style values
-    const procCd = pf(props.ProcCooldown?.value) || undefined;
+    // The real re-proc gate is the item's AbilityCooldown (e.g. Mystic Shot = 8s),
+    // NOT the short internal ProcCooldown (=1s). Using ProcCooldown made cooldown-gated
+    // procs fire many times in a burst — badly inflating slow weapons (shotguns), whose
+    // shots span more seconds. Prefer AbilityCooldown, then ProcCooldown, then 1s.
+    const procCd = pf(props.AbilityCooldown?.value) || pf(props.ProcCooldown?.value) || 1;
+
+    // Spirit-power scaling on a property: only when it scales on ETechPower (Spirit).
+    const spiritScaleOf = (prop: unknown): number | undefined => {
+        const sf = (prop as { scale_function?: { specific_stat_scale_type?: string; stat_scale?: unknown } } | undefined)?.scale_function;
+        if (sf?.specific_stat_scale_type !== "ETechPower") return undefined;
+        return pf(sf.stat_scale) || undefined;
+    };
 
     for (const k of Object.keys(props)) {
         const val = pf(props[k]?.value);
         if (!val) continue;
+        const spiritScale = spiritScaleOf(props[k]);
 
-        // Cooldown-gated spirit proc (e.g. Mystic Shot: +40 spirit, 1s)
+        // Cooldown-gated spirit proc (e.g. Mystic Shot: +40 spirit + 1.2/Spirit, 8s cooldown)
         if (/^ProcBonusMagicDamage$/i.test(k))
-            add({ kind: "onHitProc", damageType: "spirit", value: val, valueType: "flat", procCooldown: procCd ?? 1 });
+            add({ kind: "onHitProc", damageType: "spirit", value: val, valueType: "flat", procCooldown: procCd, spiritScale });
         // Per-bullet spirit add (no cooldown)
         else if (/^BulletsBonusMagicDamage$/i.test(k))
-            add({ kind: "onHitProc", damageType: "spirit", value: val, valueType: "flat", procCooldown: 0 });
+            add({ kind: "onHitProc", damageType: "spirit", value: val, valueType: "flat", procCooldown: 0, spiritScale });
         // Cooldown-gated weapon proc dealing a % of the shot (e.g. +125% base attack)
         else if (/^ProcBaseAttackDamagePercent$/i.test(k))
-            add({ kind: "onHitProc", damageType: "weapon", value: val, valueType: "percentOfShot", procCooldown: procCd ?? 1 });
+            add({ kind: "onHitProc", damageType: "weapon", value: val, valueType: "percentOfShot", procCooldown: procCd });
     }
 
     // Flat headshot bonus (e.g. Headshot Booster +45, Headhunter +75)

@@ -79,12 +79,24 @@ describe("investment bonuses", () => {
 });
 
 describe("item effects in burst", () => {
-    test("Mystic Shot procs once per second over the burst window", () => {
-        // Abrams fires ~1.59/s, so 8 shots span ~5s → proc fires ~6 times.
+    test("Mystic Shot is gated by its 8s cooldown, not per-bullet (no shotgun inflation)", () => {
+        // Mystic Shot's real re-proc gate is AbilityCooldown=8s. Abrams' 8-shot burst
+        // spans ~5s (< 8s), so the proc fires exactly once — it must NOT scale up just
+        // because a slow weapon takes longer to fire the same shot count.
         const r = simulate({ hero: hero("Abrams"), items: [item("Mystic Shot")] }, { hero: hero("Haze") }, opts({ range: 5 }));
         const proc = r.burst.procs.find((p) => p.name === "Mystic Shot");
         expect(proc).toBeDefined();
-        expect(proc!.count).toBe(6);
+        expect(proc!.count).toBe(1);
+    });
+
+    test("Mystic Shot proc damage scales with Spirit Power", () => {
+        // Mystic Shot is +40 spirit +1.2 per Spirit. Adding Extra Spirit (+10 Spirit)
+        // must raise the proc's damage (same single proc, bigger hit).
+        const base = simulate({ hero: hero("Abrams"), items: [item("Mystic Shot")] }, { hero: hero("Haze") }, opts({ range: 5 }));
+        const buffed = simulate({ hero: hero("Abrams"), items: [item("Mystic Shot"), item("Extra Spirit")] }, { hero: hero("Haze") }, opts({ range: 5 }));
+        const b = base.burst.procs.find((p) => p.name === "Mystic Shot")!;
+        const s = buffed.burst.procs.find((p) => p.name === "Mystic Shot")!;
+        expect(s.dmg).toBeGreaterThan(b.dmg);
     });
 
     test("headshot bonus only applies to headshot shots", () => {

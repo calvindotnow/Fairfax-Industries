@@ -341,6 +341,7 @@ function computeBurst(
 
     const fireRate = heroStats.weaponFireRate ?? 0;
     const burstDuration = fireRate > 0 ? shots / fireRate : 0;
+    const spirit = heroStats.spiritPower ?? 0;
     const procs: BurstResult["procs"] = [];
     let procDamage = 0;
     for (const e of effects.filter((e) => e.kind === "onHitProc")) {
@@ -349,7 +350,9 @@ function computeBurst(
         const per =
             e.valueType === "percentOfShot"
                 ? effectiveDpb * (e.value / 100)
-                : e.value * (e.damageType === "spirit" ? spiritRes : bulletRes);
+                : e.damageType === "spirit"
+                    ? (e.value + spirit * (e.spiritScale ?? 0)) * spiritRes
+                    : e.value * bulletRes;
         const dmg = count * per;
         procDamage += dmg;
         procs.push({ name: e.itemName, count, dmg });
@@ -404,12 +407,15 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
     // On-hit procs sustained over time: a proc fires every `procCooldown` seconds
     // (0 = every shot), capped at the weapon's fire rate. Folded into sustained DPS.
     const fireRate = heroStats.weaponFireRate ?? 0;
+    const spiritPower = heroStats.spiritPower ?? 0;
     let procDps = 0;
     for (const e of effects.filter((e) => e.kind === "onHitProc")) {
         const per =
             e.valueType === "percentOfShot"
                 ? damagePerShot * (e.value / 100)
-                : e.value * (e.damageType === "spirit" ? spiritResFactor : bulletResFactor);
+                : e.damageType === "spirit"
+                    ? (e.value + spiritPower * (e.spiritScale ?? 0)) * spiritResFactor
+                    : e.value * bulletResFactor;
         const c = e.procCooldown ?? 1;
         const rate = c <= 0 ? fireRate : Math.min(1 / c, fireRate || 1 / c);
         procDps += per * rate;

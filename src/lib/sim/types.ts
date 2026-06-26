@@ -25,6 +25,7 @@ export interface ItemEffect {
     valueType?: "flat" | "percentOfShot";
     condition?: "headshot";
     procCooldown?: number; // seconds; 0 = every shot
+    spiritScale?: number; // bonus per point of Spirit Power (e.g. Mystic Shot 1.2)
     rangeMin?: number; // meters
     rangeMax?: number; // meters
     itemName?: string;

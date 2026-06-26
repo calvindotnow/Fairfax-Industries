@@ -17,7 +17,6 @@ Severity: 🔴 blocks a cohort · 🟠 major friction / trust · 🟡 polish / e
 
 These are scope limits, not bugs — surfaced on `/methodology`. Tightening them is "deeper engine" work in [features.md](features.md).
 
-- Procs are counted in **burst** but not in **sustained DPS**.
 - **Melee** models only base light/heavy (no +50% weapon-damage scaling, no melee-damage items, no separate melee-resist channel).
 - **Item stacking buffs** (Berserker, Glass Cannon) and **active items as combo steps** aren't modeled.
 

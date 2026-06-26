@@ -40,10 +40,12 @@ function statLine(m: ItemStatModifier): string {
 }
 
 function effectLine(e: ItemEffect): string {
-    if (e.kind === "onHitProc")
+    if (e.kind === "onHitProc") {
+        const scale = e.spiritScale ? ` (+${e.spiritScale}/Spirit)` : "";
         return e.valueType === "percentOfShot"
             ? `On hit: +${e.value}% of shot${e.procCooldown ? ` · ${e.procCooldown}s` : ""}`
-            : `On hit: +${e.value} ${e.damageType}${e.procCooldown ? ` · ${e.procCooldown}s` : " · per shot"}`;
+            : `On hit: +${e.value}${scale} ${e.damageType}${e.procCooldown ? ` · ${e.procCooldown}s` : " · per shot"}`;
+    }
     if (e.kind === "onHitFlat") return `Headshot: +${e.value} ${e.damageType}`;
     if (e.kind === "conditionalWeaponPct")
         return e.rangeMin != null ? `+${e.value}% weapon ≥${e.rangeMin}m` : `+${e.value}% weapon ≤${e.rangeMax}m`;
@@ -100,6 +102,10 @@ export default function BuyMenu({ items, loadout, onAdd, onRemove, buyingFor, on
     const toggle = (it: ItemWithModifiers) => (isEq(it) ? onRemove(it.id) : onAdd(it.id));
     const catCounts = { weapon: 0, vitality: 0, spirit: 0 } as Record<Cat, number>;
     items.forEach((i) => { if (i.category in catCounts) catCounts[i.category as Cat]++; });
+    // Deadlock caps a build at 4 active items. Lock out buying a 5th once 4 are owned.
+    const ACTIVE_CAP = 4;
+    const activeCount = items.reduce((n, i) => n + (loadout.includes(i.id) && i.isActive ? 1 : 0), 0);
+    const atActiveCap = activeCount >= ACTIVE_CAP;
 
     return (
         <section style={{
@@ -143,6 +149,14 @@ export default function BuyMenu({ items, loadout, onAdd, onRemove, buyingFor, on
                         </button>
                     );
                 })}
+                <span title="Deadlock allows up to 4 active items per build"
+                    style={{ marginLeft: "auto", alignSelf: "center", display: "inline-flex", alignItems: "center", gap: 5, padding: "0 9px", height: 26, borderRadius: "var(--r-sm)",
+                        fontFamily: "var(--font-oswald)", fontWeight: 600, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase",
+                        color: atActiveCap ? "var(--weapon-500)" : "var(--parch-ink-soft)",
+                        border: `1px solid ${atActiveCap ? "var(--weapon-500)" : "var(--parch-line)"}`,
+                        background: atActiveCap ? "color-mix(in srgb, var(--weapon-500) 12%, transparent)" : "transparent" }}>
+                    Actives <span style={{ fontFamily: "var(--font-numeric)" }}>{activeCount}/{ACTIVE_CAP}</span>
+                </span>
             </div>
 
             {/* Tier quadrants */}
@@ -169,12 +183,15 @@ export default function BuyMenu({ items, loadout, onAdd, onRemove, buyingFor, on
                                 {tierItems.map((it) => {
                                     const eq = isEq(it);
                                     const color = CAT_COLOR[it.category] ?? "var(--text)";
+                                    // Locked: an unequipped active item while already at the 4-active cap.
+                                    const locked = !eq && !!it.isActive && atActiveCap;
                                     return (
                                         <button key={it.id}
                                             type="button"
                                             aria-pressed={eq}
-                                            title={`${it.name} — ${eq ? "in loadout" : "buy"}`}
-                                            onClick={() => (canHover ? toggle(it) : (setHover(null), setSelected(it)))}
+                                            aria-disabled={locked}
+                                            title={locked ? `${it.name} — active limit reached (${ACTIVE_CAP}/${ACTIVE_CAP})` : `${it.name} — ${eq ? "in loadout" : "buy"}`}
+                                            onClick={() => { if (canHover) { if (!locked) toggle(it); } else { setHover(null); setSelected(it); } }}
                                             onMouseEnter={canHover ? (e) => setHover({ item: it, x: e.clientX, y: e.clientY }) : undefined}
                                             onMouseMove={canHover ? (e) => setHover((h) => (h && h.item.id === it.id ? { ...h, x: e.clientX, y: e.clientY } : { item: it, x: e.clientX, y: e.clientY })) : undefined}
                                             onMouseLeave={canHover ? () => setHover(null) : undefined}
@@ -182,10 +199,11 @@ export default function BuyMenu({ items, loadout, onAdd, onRemove, buyingFor, on
                                             onBlur={() => setHover(null)}
                                             style={{
                                                 width: 64, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "2px 1px 3px",
-                                                borderRadius: "var(--r-sm)", cursor: "pointer",
+                                                borderRadius: "var(--r-sm)", cursor: locked ? "not-allowed" : "pointer",
                                                 background: eq ? (dark ? "rgba(255,255,255,0.08)" : "rgba(44,35,22,0.18)") : "transparent",
                                                 border: eq ? `1px solid ${color}` : "1px solid transparent",
                                                 boxShadow: eq ? `0 0 10px -4px ${color}` : "none",
+                                                opacity: locked ? 0.4 : 1,
                                                 outline: "none",
                                             }}>
                                             <div style={{ position: "relative", width: 60, height: 60, borderRadius: "var(--r-sm)", background: dark ? "rgba(255,255,255,0.06)" : "rgba(44,35,22,0.12)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
@@ -194,6 +212,7 @@ export default function BuyMenu({ items, loadout, onAdd, onRemove, buyingFor, on
                                                     : <span style={{ fontSize: 8, color: dark ? color : "var(--parch-ink-soft)", textAlign: "center", lineHeight: 1.2, padding: "0 2px" }}>{it.name}</span>}
                                                 {/* Non-color "owned" indicator (FR-5) so it doesn't rely on hue alone */}
                                                 {eq && <span aria-hidden style={{ position: "absolute", top: 2, right: 2, width: 14, height: 14, borderRadius: "50%", background: "var(--cash-500)", color: "#10160f", fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 1.5px rgba(0,0,0,0.35)" }}>✓</span>}
+                                                {locked && <span aria-hidden style={{ position: "absolute", top: 2, left: 2, fontSize: 10, lineHeight: 1 }}>🔒</span>}
                                             </div>
                                             {/* Label stays contrast-safe; "owned" is shown by the badge + border, not by recoloring text (FR-5) */}
                                             <span style={{ fontSize: 10, lineHeight: 1.25, textAlign: "center", fontWeight: eq ? 600 : 400, color: dark ? (eq ? "var(--text)" : "var(--text-muted)") : (eq ? "var(--parch-ink)" : "var(--parch-ink-soft)"), fontFamily: "var(--font-archivo)" }}>{it.name}</span>
@@ -214,6 +233,7 @@ export default function BuyMenu({ items, loadout, onAdd, onRemove, buyingFor, on
 
             {/* Tap details sheet (touch) — explicit Buy/Sell */}
             {selected && <ItemSheet item={selected} equipped={isEq(selected)}
+                locked={!isEq(selected) && !!selected.isActive && atActiveCap}
                 components={upgrades.components.get(selected.id) ?? []}
                 buildsInto={upgrades.buildsInto.get(selected.id) ?? []}
                 onBuy={() => { toggle(selected); setSelected(null); }}
@@ -368,7 +388,7 @@ function ItemTooltip({ item, x, y, equipped, components, buildsInto }: { item: I
 }
 
 // Touch path: a modal sheet with full item details and an explicit Buy/Sell button.
-function ItemSheet({ item, equipped, components, buildsInto, onBuy, onClose }: { item: ItemWithModifiers; equipped: boolean; components: string[]; buildsInto: string[]; onBuy: () => void; onClose: () => void }) {
+function ItemSheet({ item, equipped, locked, components, buildsInto, onBuy, onClose }: { item: ItemWithModifiers; equipped: boolean; locked: boolean; components: string[]; buildsInto: string[]; onBuy: () => void; onClose: () => void }) {
     const c = item.category;
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -386,13 +406,19 @@ function ItemSheet({ item, equipped, components, buildsInto, onBuy, onClose }: {
                 </div>
                 <ItemDetailsBody item={item} components={components} buildsInto={buildsInto}
                     footer={
-                        <button type="button" onClick={onBuy}
-                            style={{ marginTop: 13, width: "100%", height: 42, cursor: "pointer", borderRadius: "var(--r-sm)", fontFamily: "var(--font-oswald)", fontWeight: 600, fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase",
-                                border: `1px solid ${equipped ? "var(--danger-500)" : "var(--cash-500)"}`,
-                                background: `color-mix(in srgb, ${equipped ? "var(--danger-500)" : "var(--cash-500)"} 16%, transparent)`,
-                                color: equipped ? "var(--danger-500)" : "var(--cash-500)" }}>
-                            {equipped ? "Sell item" : `Buy · §${item.soulCost.toLocaleString()}`}
-                        </button>
+                        locked ? (
+                            <div style={{ marginTop: 13, width: "100%", minHeight: 42, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "0 12px", borderRadius: "var(--r-sm)", border: "1px solid var(--border-strong)", background: "var(--surface-raised)", color: "var(--text-dim)", fontSize: 12, lineHeight: 1.4 }}>
+                                🔒 Active limit reached — a build can hold 4 active items. Sell one to make room.
+                            </div>
+                        ) : (
+                            <button type="button" onClick={onBuy}
+                                style={{ marginTop: 13, width: "100%", height: 42, cursor: "pointer", borderRadius: "var(--r-sm)", fontFamily: "var(--font-oswald)", fontWeight: 600, fontSize: 13, letterSpacing: "0.08em", textTransform: "uppercase",
+                                    border: `1px solid ${equipped ? "var(--danger-500)" : "var(--cash-500)"}`,
+                                    background: `color-mix(in srgb, ${equipped ? "var(--danger-500)" : "var(--cash-500)"} 16%, transparent)`,
+                                    color: equipped ? "var(--danger-500)" : "var(--cash-500)" }}>
+                                {equipped ? "Sell item" : `Buy · §${item.soulCost.toLocaleString()}`}
+                            </button>
+                        )
                     } />
             </div>
         </div>

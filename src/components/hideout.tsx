@@ -471,9 +471,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                                             ? <Image src={a.imageUrl} alt="" width={32} height={32} style={{ width: 32, height: 32, objectFit: "contain", flexShrink: 0 }} />
                                             : <span style={{ width: 32, height: 32, borderRadius: "var(--r-sm)", background: "var(--surface-well)", flexShrink: 0 }} />}
                                         <span style={{ flex: 1, fontSize: 13.5, color: "var(--text)" }}>{a.name}</span>
-                                        {c && <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: CAT_COLOR[c], border: `1px solid ${CAT_COLOR[c]}55`, borderRadius: "var(--r-xs)", padding: "1px 4px" }}>{c}</span>}
                                         {a.isUltimate && <span style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--brass-400)" }}>ult</span>}
-                                        {a.isDot && <span style={{ fontSize: 10, color: "var(--text-dim)" }}>dot</span>}
                                         <span style={{ fontFamily: "var(--font-numeric)", fontSize: 12, color: "var(--text-dim)", width: 40, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                                             {a.cooldown ? `${a.cooldown}s` : "—"}
                                         </span>
