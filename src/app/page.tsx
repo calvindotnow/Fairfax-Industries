@@ -3,8 +3,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { ArrowRight } from "lucide-react";
 
-export const dynamic = "force-dynamic";
-
 export default async function HomePage() {
   const allHeroes = getHeroes();
   const heroRow = { count: allHeroes.length };

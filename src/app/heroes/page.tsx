@@ -3,8 +3,6 @@ import Image from "next/image";
 import { heroSlug } from "@/lib/slug";
 import { getHeroes } from "@/lib/data";
 
-export const dynamic = "force-dynamic";
-
 export default async function HeroesPage() {
   const roster = getHeroes();
 

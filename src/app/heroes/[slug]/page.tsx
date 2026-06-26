@@ -6,9 +6,12 @@ import { heroSlug } from "@/lib/slug";
 import { deriveAbilityScaling } from "@/lib/sim";
 import { getHeroes } from "@/lib/data";
 
-export const dynamic = "force-dynamic";
-
 const fmt = (n: number) => (Number.isInteger(n) ? n.toLocaleString() : n.toFixed(1));
+
+// Prebuild every hero page from the baked data (no DB; all slugs are known).
+export function generateStaticParams() {
+  return getHeroes().map((h) => ({ slug: heroSlug(h.name) }));
+}
 
 export default async function HeroDetailPage({
   params,

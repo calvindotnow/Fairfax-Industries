@@ -3,8 +3,6 @@ import { diffSnapshots, type SnapshotPayload, type EntityChange } from "@/lib/pa
 import { format } from "date-fns";
 import Link from "next/link";
 
-export const dynamic = "force-dynamic";
-
 const fmt = (n: number | null) => (n == null ? "—" : Number.isInteger(n) ? n.toLocaleString() : n.toFixed(2));
 
 export default async function PatchNotesPage() {

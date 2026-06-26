@@ -1,8 +1,6 @@
 import ItemBrowser from "./item-browser";
 import { getItems } from "@/lib/data";
 
-export const dynamic = "force-dynamic";
-
 export default async function ItemsPage() {
   const items = getItems();
 
