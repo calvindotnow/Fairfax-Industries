@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: { params: Promise<{ code: str
     if (!b) return { title: "Build not found — Fairfax Industries" };
     const title = `${b.hero.name} vs ${b.target.name} — ${Math.round(b.result.burst.total).toLocaleString()} burst`;
     const description = `A Deadlock build: ${b.hero.name} (Lvl ${b.result.level}) vs ${b.target.name}. ${Math.round(b.result.sustainedDps).toLocaleString()} sustained DPS. Open it in the Fairfax Industries build tool.`;
-    return { title, description, openGraph: { title, description } };
+    return { title, description, openGraph: { title, description }, twitter: { card: "summary_large_image", title, description } };
 }
 
 const fmt = (n: number) => Math.round(n).toLocaleString();
