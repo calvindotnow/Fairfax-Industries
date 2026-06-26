@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
-import { simulate, levelFromSouls, type SimResult } from "@/lib/sim";
+import { simulate, levelFromSouls, parseEffects, type SimResult } from "@/lib/sim";
 import { encodeBuild, type ShareState } from "@/lib/build-code";
 import { useIsNarrow } from "@/lib/use-narrow";
 import BuyMenu from "@/components/buy-menu";
@@ -95,6 +95,10 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     const [hittingEnemy, setHittingEnemy] = useState(true);
     const [resistDebuffs, setResistDebuffs] = useState(true);
     const [activesFiring, setActivesFiring] = useState(false);
+    // Assumed stacks for stacking items (Berserker/Glass Cannon). Defaults high so a
+    // freshly-equipped stacking item shows fully stacked; capped per item in the engine
+    // and by the slider's max below.
+    const [stacks, setStacks] = useState(99);
 
     // The attacker loadout the whole tool reads/writes: build A normally, build B
     // while comparing and editing B. Switching activeBuild swaps what's on screen.
@@ -209,14 +213,14 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     const targetEquipped = useMemo(() => targetLoadout.map((id) => items.find((i) => i.id === id)!).filter(Boolean), [targetLoadout, items]);
 
     // Both builds run against the same hero, target, and scenario.
-    const sharedSim = { hero, target, targetEquipped, matchTargetLevel, range, shots, headshots, disabledAbilities, hittingEnemy, resistDebuffs, activesFiring };
+    const sharedSim = { hero, target, targetEquipped, matchTargetLevel, range, shots, headshots, disabledAbilities, hittingEnemy, resistDebuffs, activesFiring, stacks };
     const simAttacker = (atkItems: ItemWithModifiers[]) =>
         !hero || !target
             ? null
             : simulate(
                   { hero, items: atkItems },
                   { hero: target, items: targetEquipped, matchAttackerLevel: matchTargetLevel },
-                  { range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring }
+                  { range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring, stacks }
               );
     /* eslint-disable react-hooks/exhaustive-deps */
     const resultA = useMemo(() => simAttacker(equippedA), [equippedA, sharedSim]);
@@ -226,6 +230,11 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     // The VS band + damage panel reflect whichever build you're actively editing.
     const equipped = activeBuild === "B" ? equippedB : equippedA;
     const result = activeBuild === "B" ? resultB : resultA;
+    // Highest stack cap among equipped stacking items (0 if none) — drives the Stacks slider.
+    const maxStacksEquipped = useMemo(
+        () => Math.max(0, ...equipped.flatMap((it) => parseEffects(it.effects)).filter((e) => e.kind === "stacking").map((e) => e.maxStacks ?? 0)),
+        [equipped]
+    );
 
     // Build progression (FR-1): preview the active build at a purchase checkpoint —
     // the partial loadout you'd own by step N — without touching the live calculator.
@@ -514,6 +523,16 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                             tip="Your resist-reduction items (Crippling Headshot, Bullet Resist Shredder) are lowering the target's resists." />
                         <ScenarioChip label="Actives firing" on={activesFiring} onClick={() => setActivesFiring((v) => !v)}
                             tip="Assume your active items are firing. (Active-item combos are modeled in a later pass.)" />
+                        {maxStacksEquipped > 0 && (
+                            <span title="Stacks for Berserker / Glass Cannon — each ramps per stack up to its own cap."
+                                style={{ display: "inline-flex", alignItems: "center", gap: 7, height: 26, padding: "0 10px", borderRadius: "var(--r-pill)", border: "1px solid var(--border-brass)", background: "color-mix(in srgb, var(--brass-500) 10%, transparent)" }}>
+                                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--brass-300)" }}>Stacks</span>
+                                <input type="range" min={0} max={maxStacksEquipped} step={1} value={Math.min(stacks, maxStacksEquipped)}
+                                    onChange={(e) => setStacks(Number(e.target.value))} aria-label="Stacking item stacks"
+                                    style={{ width: 88, accentColor: "var(--brass-500)" }} />
+                                <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 12, color: "var(--text)", minWidth: 30, textAlign: "right" }}>{Math.min(stacks, maxStacksEquipped)}/{maxStacksEquipped}</span>
+                            </span>
+                        )}
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
                         <StatReadout label="Sustained DPS" value={fmt(result.sustainedDps)} unit="dps" accent tip={`Damage per second firing continuously at this range (fire rate × damage per shot, after the target's resists)${result.procDps > 0 ? `, including ${fmt(result.procDps)} from on-hit procs` : ""}.`} />

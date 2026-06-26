@@ -19,9 +19,13 @@ export interface StatModifier {
 
 /** A direct-damage effect an item adds (proc, conditional flat/percent add). */
 export interface ItemEffect {
-    kind: "onHitProc" | "onHitFlat" | "conditionalWeaponPct" | "conditionalFireRate" | "targetResistReduction";
+    kind: "onHitProc" | "onHitFlat" | "conditionalWeaponPct" | "conditionalFireRate" | "targetResistReduction" | "stacking";
     damageType?: DamageType;
     value: number;
+    // stacking: `value` = per-stack amount, `stat` = the stat it boosts, `maxStacks` = cap.
+    // (Berserker: +7% bulletDamage/stack ×10; Glass Cannon: +7% weaponFireRate/stack ×8.)
+    stat?: string;
+    maxStacks?: number;
     valueType?: "flat" | "percentOfShot";
     condition?: "headshot";
     procCooldown?: number; // seconds; 0 = every shot
@@ -145,6 +149,7 @@ export interface SimOptions {
     hittingEnemy?: boolean;   // activated fire-rate tiers (Burst Fire) + on-hit conditions
     resistDebuffs?: boolean;  // apply the attacker's resist-reduction items to the target
     activesFiring?: boolean;  // active-item effects are firing (reserved for active-combo modeling)
+    stacks?: number;          // assumed stack count for stacking items (capped per item's maxStacks)
 }
 
 export interface AbilityRow {

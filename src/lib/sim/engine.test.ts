@@ -12,7 +12,7 @@ const item = (name: string) => items.find((i) => i.name === name)!;
 const byCategoryDesc = (cat: string) =>
     items.filter((i) => i.category === cat).sort((a, b) => b.soulCost - a.soulCost);
 
-const opts = (over: Partial<{ range: number; shots: number; headshots: number; disabledAbilityIds: number[]; hittingEnemy: boolean; resistDebuffs: boolean; activesFiring: boolean }> = {}) => ({
+const opts = (over: Partial<{ range: number; shots: number; headshots: number; disabledAbilityIds: number[]; hittingEnemy: boolean; resistDebuffs: boolean; activesFiring: boolean; stacks: number }> = {}) => ({
     range: 15,
     shots: 8,
     headshots: 0,
@@ -118,6 +118,14 @@ describe("combat-scenario conditionals", () => {
         const off = simulate({ hero: hero("Haze"), items: [item("Crippling Headshot")] }, { hero: hero("Abrams") }, opts({ range: 10 }));
         const on = simulate({ hero: hero("Haze"), items: [item("Crippling Headshot")] }, { hero: hero("Abrams") }, opts({ range: 10, resistDebuffs: true }));
         expect(on.burst.total).toBeGreaterThan(off.burst.total);
+    });
+
+    test("Berserker stacks ramp weapon damage, capped at maxStacks", () => {
+        const s0 = simulate({ hero: hero("Haze"), items: [item("Berserker")] }, { hero: hero("Abrams") }, opts({ range: 10, stacks: 0 }));
+        const s10 = simulate({ hero: hero("Haze"), items: [item("Berserker")] }, { hero: hero("Abrams") }, opts({ range: 10, stacks: 10 }));
+        const s99 = simulate({ hero: hero("Haze"), items: [item("Berserker")] }, { hero: hero("Abrams") }, opts({ range: 10, stacks: 99 }));
+        expect(s10.damagePerShot).toBeGreaterThan(s0.damagePerShot);
+        expect(s99.damagePerShot).toBeCloseTo(s10.damagePerShot); // capped at 10 stacks
     });
 });
 

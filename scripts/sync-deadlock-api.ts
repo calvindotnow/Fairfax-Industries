@@ -178,6 +178,23 @@ function parseItemEffects(props: Record<string, any>, itemName: string) {
     const spiritRed = pf(props.MagicResistReduction?.value);
     if (spiritRed && spiritRed < 0) add({ kind: "targetResistReduction", damageType: "spirit", value: Math.abs(spiritRed) });
 
+    // Stacking items (Berserker, Glass Cannon): one or more *PerStack/*PerKill amounts +
+    // a MaxStacks cap. The stat is inferred from the property name (no provided_property_type).
+    // Iterate all matching keys — an item can have several (e.g. Glass Cannon: BonusClipPerKill
+    // which we ignore, plus FireRatePerKill which we keep).
+    const maxStacks = pf(props.MaxStacks?.value) || 0;
+    if (maxStacks) {
+        for (const k of Object.keys(props)) {
+            if (!/(PerStack|PerKill)$/i.test(k)) continue;
+            const perStack = pf(props[k]?.value);
+            const stat = /FireRate/i.test(k) ? "weaponFireRate"
+                : /(WeaponPower|WeaponDamage|BaseAttack)/i.test(k) ? "bulletDamage"
+                : /(Spirit|TechPower)/i.test(k) ? "spiritPower"
+                : null;
+            if (perStack && stat) add({ kind: "stacking", value: perStack, stat, maxStacks });
+        }
+    }
+
     return effects;
 }
 
