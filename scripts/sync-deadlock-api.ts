@@ -732,11 +732,72 @@ async function main() {
         }
     }
 
+    // ─── Translate deadlock-api IDs → DB IDs ─────────────────────────────────
+    // The analytics endpoints return deadlock-api hero/item IDs (small ints 1-81 for
+    // heroes, large ints like 7409189 for items). Our DB uses auto-incremented IDs
+    // (heroes 115-152, items 469-624). Translate here before writing JSON so all
+    // downstream accessors (getMatchup, getCounterItems, getItemStats) can join by id.
+    // Join key: name (unique; both spaces ultimately come from the same /v1/assets data).
+    // Rows whose id doesn't resolve (analytics covers heroes/items we don't model) are dropped.
+
+    // apiHeroId → DB hero id (via name)
+    const _apiHeroIdToName = new Map<number, string>(
+        (heroData as any[]).filter(h => !h.disabled && h.player_selectable).map(h => [h.id as number, h.name as string])
+    );
+    const _heroNameToDbId = new Map<string, number>(bakedHeroes.map(h => [h.name, h.id]));
+    const xlHero = (apiId: number): number | null => {
+        const name = _apiHeroIdToName.get(apiId);
+        return name != null ? (_heroNameToDbId.get(name) ?? null) : null;
+    };
+
+    // apiItemId → DB item id (via prettyName)
+    const _apiItemIdToName = new Map<number, string>(
+        (itemData as any[]).filter(i => typeof i.id === "number" && i.name).map(i => [i.id as number, prettyName(i.name as string)])
+    );
+    const _itemNameToDbId = new Map<string, number>(bakedItems.map(i => [i.name, i.id]));
+    const xlItem = (apiId: number): number | null => {
+        const name = _apiItemIdToName.get(apiId);
+        return name != null ? (_itemNameToDbId.get(name) ?? null) : null;
+    };
+
+    // Translate counter_stats: hero_id + enemy_hero_id
+    const translated_counter_stats = (counter_stats as any[])
+        .map(r => { const h = xlHero(r.hero_id), e = xlHero(r.enemy_hero_id); return (h != null && e != null) ? { ...r, hero_id: h, enemy_hero_id: e } : null; })
+        .filter((r): r is NonNullable<typeof r> => r != null);
+
+    // Translate synergy_stats: hero_id1 + hero_id2
+    const translated_synergy_stats = (synergy_stats as any[])
+        .map(r => { const h1 = xlHero(r.hero_id1), h2 = xlHero(r.hero_id2); return (h1 != null && h2 != null) ? { ...r, hero_id1: h1, hero_id2: h2 } : null; })
+        .filter((r): r is NonNullable<typeof r> => r != null);
+
+    // Translate item_stats: hero key + each row's item_id
+    const translated_item_stats: Record<number, any[]> = {};
+    for (const [apiHeroKey, rows] of Object.entries(item_stats)) {
+        const dbHeroId = xlHero(Number(apiHeroKey));
+        if (dbHeroId == null) continue;
+        const xlRows = (rows as any[]).map(r => { const iid = xlItem(r.item_id); return iid != null ? { ...r, item_id: iid } : null; }).filter((r): r is NonNullable<typeof r> => r != null);
+        if (xlRows.length > 0) translated_item_stats[dbHeroId] = xlRows;
+    }
+
+    // Translate counter_item_stats: hero key + enemy key + each row's item_id
+    const translated_counter_item_stats: Record<number, Record<number, any[]>> = {};
+    for (const [apiHeroKey, enemyMap] of Object.entries(counter_item_stats)) {
+        const dbHeroId = xlHero(Number(apiHeroKey));
+        if (dbHeroId == null) continue;
+        translated_counter_item_stats[dbHeroId] = {};
+        for (const [apiEnemyKey, rows] of Object.entries(enemyMap as Record<string, any[]>)) {
+            const dbEnemyId = xlHero(Number(apiEnemyKey));
+            if (dbEnemyId == null) continue;
+            const xlRows = rows.map(r => { const iid = xlItem(r.item_id); return iid != null ? { ...r, item_id: iid } : null; }).filter((r): r is NonNullable<typeof r> => r != null);
+            if (xlRows.length > 0) translated_counter_item_stats[dbHeroId][dbEnemyId] = xlRows;
+        }
+    }
+
     writeFileSync(
         new URL("../src/lib/lane-lab-data.json", import.meta.url),
-        JSON.stringify({ synced_at: new Date().toISOString(), params: LANE_LAB, counter_stats, counter_item_stats, item_stats, synergy_stats }),
+        JSON.stringify({ synced_at: new Date().toISOString(), params: LANE_LAB, counter_stats: translated_counter_stats, counter_item_stats: translated_counter_item_stats, item_stats: translated_item_stats, synergy_stats: translated_synergy_stats }),
     );
-    console.log(`  lane-lab data → src/lib/lane-lab-data.json (${counter_stats.length} counter pairs, ${activeHeroIds.length} heroes, ${pairCount} per-pair calls)`);
+    console.log(`  lane-lab data → src/lib/lane-lab-data.json (${translated_counter_stats.length} counter pairs, ${activeHeroIds.length} heroes, ${pairCount} per-pair calls)`);
     console.log("Done.");
 }
 
