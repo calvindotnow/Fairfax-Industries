@@ -420,7 +420,13 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
                 return { statName: e.stat as string, flatBonus: flat ? amt : 0, percentBonus: flat ? 0 : amt };
             })
     );
-    const heroStats = calculateStats(applyLevel(hero, level), [...items, { modifiers: inv.mods }, { modifiers: stackMods }]);
+    // Active items' on-cast self-buffs apply only while "Actives firing" is on.
+    const activeBuffMods: StatModifier[] = (opts.activesFiring ? effects.filter((e) => e.kind === "activeBuff" && e.stat) : [])
+        .map((e) => {
+            const flat = FLAT_STACK_STATS.has(e.stat as string);
+            return { statName: e.stat as string, flatBonus: flat ? e.value : 0, percentBonus: flat ? 0 : e.value };
+        });
+    const heroStats = calculateStats(applyLevel(hero, level), [...items, { modifiers: inv.mods }, { modifiers: stackMods }, { modifiers: activeBuffMods }]);
 
     // Target builds its own loadout: its souls drive its level, and its items +
     // investment bonuses feed health/resists into every mitigation step below.
@@ -470,7 +476,10 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
         const rate = c <= 0 ? fireRate : Math.min(1 / c, fireRate || 1 / c);
         procDps += per * rate;
     }
-    const sustainedDps = combat.dps * cwm + procDps;
+    // Accuracy scales sustained output — over a long fight, misses don't damage or proc.
+    // (Burst is left as the ideal combo window; accuracy is a sustained-fight concept.)
+    const accuracy = Math.max(0, Math.min(100, opts.accuracy ?? 100)) / 100;
+    const sustainedDps = (combat.dps * cwm + procDps) * accuracy;
 
     // Melee damage: base × per-level growth, then bullet resist (which reduces
     // melee too, per the Deadlock wiki). Light grows by meleePerLevel each boon;

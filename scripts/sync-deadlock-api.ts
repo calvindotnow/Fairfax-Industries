@@ -248,6 +248,18 @@ async function main() {
         // Imbue items attach to one ability. Mark them so the UI can offer an ability picker.
         const isImbue = /imbu/i.test(it.class_name || "") || /imbue an ability|imbued ability/i.test(it.description?.desc || "");
         if (isImbue) eff.push({ kind: "imbue", value: 0, itemName: display });
+        // Active items' on-cast self-buffs (ConditionallyApplied stats that map to our model,
+        // e.g. Blood Tribute +35% fire rate). Applied only when "Actives firing" is toggled on.
+        if (it.is_active_item) {
+            for (const [k, raw] of Object.entries(it.properties || {})) {
+                const pr = raw as { usage_flags?: string[]; provided_property_type?: string; value?: unknown };
+                if (!pr?.usage_flags?.includes("ConditionallyApplied")) continue;
+                const map = pr.provided_property_type ? MOD_MAP[pr.provided_property_type] : undefined;
+                const v = Number(pr.value);
+                if (!map || !v) continue;
+                eff.push({ kind: "activeBuff", value: v, stat: map[0], itemName: `${display}:${k}` });
+            }
+        }
         // Resolve this item's direct components (cheaper parts it's built from) to display names.
         const componentNames = Array.isArray(it.component_items)
             ? it.component_items

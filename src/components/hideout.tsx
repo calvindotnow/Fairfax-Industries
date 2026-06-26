@@ -91,6 +91,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     const [range, setRange] = useState(initialBuild?.range ?? 25);
     const [shots, setShots] = useState(initialBuild?.shots ?? 8);
     const [headshots, setHeadshots] = useState(initialBuild?.headshots ?? 0);
+    const [accuracy, setAccuracy] = useState(100); // % of shots that land — scales sustained DPS
     // Combat-scenario toggles — feed conditional item effects (Burst Fire, resist debuffs, actives).
     const [hittingEnemy, setHittingEnemy] = useState(true);
     const [resistDebuffs, setResistDebuffs] = useState(true);
@@ -217,14 +218,14 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     const targetEquipped = useMemo(() => targetLoadout.map((id) => items.find((i) => i.id === id)!).filter(Boolean), [targetLoadout, items]);
 
     // Both builds run against the same hero, target, and scenario.
-    const sharedSim = { hero, target, targetEquipped, matchTargetLevel, range, shots, headshots, disabledAbilities, hittingEnemy, resistDebuffs, activesFiring, stacksByItem };
+    const sharedSim = { hero, target, targetEquipped, matchTargetLevel, range, shots, headshots, accuracy, disabledAbilities, hittingEnemy, resistDebuffs, activesFiring, stacksByItem };
     const simAttacker = (atkItems: ItemWithModifiers[]) =>
         !hero || !target
             ? null
             : simulate(
                   { hero, items: atkItems },
                   { hero: target, items: targetEquipped, matchAttackerLevel: matchTargetLevel },
-                  { range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring, stacksByItem }
+                  { range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring, stacksByItem, accuracy }
               );
     /* eslint-disable react-hooks/exhaustive-deps */
     const resultA = useMemo(() => simAttacker(equippedA), [equippedA, sharedSim]);
@@ -579,7 +580,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                         <ScenarioChip label="Resist debuffs" on={resistDebuffs} onClick={() => setResistDebuffs((v) => !v)}
                             tip="Your resist-reduction items (Crippling Headshot, Bullet Resist Shredder) are lowering the target's resists." />
                         <ScenarioChip label="Actives firing" on={activesFiring} onClick={() => setActivesFiring((v) => !v)}
-                            tip="Assume your active items are firing. (Active-item combos are modeled in a later pass.)" />
+                            tip="Apply your active items' on-cast self-buffs (e.g. Blood Tribute's fire rate) as if they're active." />
                     </div>
                     {/* Per-item stacks — its own line, only when a stacking item is equipped. */}
                     {stackingItems.length > 0 && (
@@ -592,7 +593,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                         </div>
                     )}
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
-                        <StatReadout label="Sustained DPS" value={fmt(result.sustainedDps)} unit="dps" accent tip={`Damage per second firing continuously at this range (fire rate × damage per shot, after the target's resists)${result.procDps > 0 ? `, including ${fmt(result.procDps)} from on-hit procs` : ""}.`} />
+                        <StatReadout label="Sustained DPS" value={fmt(result.sustainedDps)} unit="dps" accent tip={`Damage per second firing continuously at this range (fire rate × damage per shot, after the target's resists)${result.procDps > 0 ? `, including ${fmt(result.procDps)} from on-hit procs` : ""}${accuracy < 100 ? `, scaled by ${accuracy}% accuracy` : ""}.`} />
                         <StatReadout label="Time to kill" value={result.timeToKill != null ? result.timeToKill.toFixed(1) : "—"} unit="s" tip="Seconds to drop the target's effective HP at this range, firing continuously. “—” means sustained DPS can't finish them." />
                         <StatReadout label="Dmg per shot" value={fmt(result.damagePerShot)} sub={`${result.heroStats?.weaponFireRate?.toFixed(2) ?? "—"}/s fire rate`} />
                     </div>
@@ -610,6 +611,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                             <NumberField label="Shots" value={shots} onChange={(v) => { setShots(v); setHeadshots((h) => Math.min(h, v)); }} min={0} max={50} />
                             <NumberField label="Headshots" value={headshots} onChange={setHeadshots} min={0} max={shots} />
+                            <NumberField label="Accuracy %" value={accuracy} onChange={setAccuracy} min={0} max={100} />
                         </div>
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, paddingTop: 16, borderTop: "1px solid var(--border)" }}>

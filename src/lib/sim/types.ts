@@ -19,7 +19,7 @@ export interface StatModifier {
 
 /** A direct-damage effect an item adds (proc, conditional flat/percent add). */
 export interface ItemEffect {
-    kind: "onHitProc" | "onHitFlat" | "conditionalWeaponPct" | "conditionalFireRate" | "targetResistReduction" | "stacking" | "imbue";
+    kind: "onHitProc" | "onHitFlat" | "conditionalWeaponPct" | "conditionalFireRate" | "targetResistReduction" | "stacking" | "imbue" | "activeBuff";
     damageType?: DamageType;
     value: number;
     // stacking: `value` = per-stack amount, `stat` = the stat it boosts, `maxStacks` = cap.
@@ -151,6 +151,7 @@ export interface SimOptions {
     activesFiring?: boolean;  // active-item effects are firing (reserved for active-combo modeling)
     // Per-item assumed stack count (item id → stacks). Unset = fully stacked (the item's max).
     stacksByItem?: Record<number, number>;
+    accuracy?: number; // 0–100; fraction of shots that land. Scales sustained DPS. Default 100.
 }
 
 export interface AbilityRow {

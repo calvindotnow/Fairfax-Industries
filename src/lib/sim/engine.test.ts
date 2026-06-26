@@ -12,7 +12,7 @@ const item = (name: string) => items.find((i) => i.name === name)!;
 const byCategoryDesc = (cat: string) =>
     items.filter((i) => i.category === cat).sort((a, b) => b.soulCost - a.soulCost);
 
-const opts = (over: Partial<{ range: number; shots: number; headshots: number; disabledAbilityIds: number[]; hittingEnemy: boolean; resistDebuffs: boolean; activesFiring: boolean; stacksByItem: Record<number, number> }> = {}) => ({
+const opts = (over: Partial<{ range: number; shots: number; headshots: number; disabledAbilityIds: number[]; hittingEnemy: boolean; resistDebuffs: boolean; activesFiring: boolean; stacksByItem: Record<number, number>; accuracy: number }> = {}) => ({
     range: 15,
     shots: 8,
     headshots: 0,
@@ -127,6 +127,19 @@ describe("combat-scenario conditionals", () => {
         const s99 = simulate({ hero: hero("Haze"), items: [bk] }, { hero: hero("Abrams") }, opts({ range: 10, stacksByItem: { [bk.id]: 99 } }));
         expect(s10.damagePerShot).toBeGreaterThan(s0.damagePerShot);
         expect(s99.damagePerShot).toBeCloseTo(s10.damagePerShot); // capped at 10 stacks
+    });
+
+    test("Actives firing applies active items' self-buffs (Blood Tribute fire rate)", () => {
+        const off = simulate({ hero: hero("Haze"), items: [item("Blood Tribute")] }, { hero: hero("Abrams") }, opts({ range: 10 }));
+        const on = simulate({ hero: hero("Haze"), items: [item("Blood Tribute")] }, { hero: hero("Abrams") }, opts({ range: 10, activesFiring: true }));
+        expect(on.sustainedDps).toBeGreaterThan(off.sustainedDps);
+    });
+
+    test("accuracy scales sustained DPS but not burst", () => {
+        const full = simulate({ hero: hero("Haze"), items: [] }, { hero: hero("Abrams") }, opts({ accuracy: 100 }));
+        const half = simulate({ hero: hero("Haze"), items: [] }, { hero: hero("Abrams") }, opts({ accuracy: 50 }));
+        expect(half.sustainedDps).toBeCloseTo(full.sustainedDps * 0.5);
+        expect(half.burst.total).toBeCloseTo(full.burst.total);
     });
 });
 
