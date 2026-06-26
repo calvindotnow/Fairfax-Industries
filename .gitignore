@@ -44,3 +44,8 @@ next-env.d.ts
 deadlock.db
 deadlock.db-shm
 deadlock.db-wal
+
+# Cloudflare / OpenNext build output
+.open-next
+.wrangler
+cloudflare-env.d.ts

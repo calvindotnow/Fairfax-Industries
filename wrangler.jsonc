@@ -1,0 +1,17 @@
+{
+  // Cloudflare Workers config for deploying this Next.js app via the OpenNext
+  // adapter. This is one documented deploy option — the app itself is host-agnostic
+  // (no runtime database; data is baked into the build). See docs/deploy.md.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fairfax-industries",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-03-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

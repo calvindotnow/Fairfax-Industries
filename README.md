@@ -31,10 +31,14 @@ Requires [Bun](https://bun.sh).
 ```bash
 bun install
 bun run db:reset   # creates the SQLite schema and scrapes fresh game data (~10s)
-bun run dev        # http://localhost:3000/proving-ground
+bun run dev        # http://localhost:3000
 ```
 
 `db:reset` is only needed on first run (or to wipe and re-pull). Day to day, `bun run dev` is all you need.
+
+The app is **host-agnostic** — game data is baked into the build (no runtime
+database), so it deploys to Cloudflare, Vercel, or any Node/Bun server. See
+[docs/deploy.md](docs/deploy.md).
 
 ## Scripts
 
