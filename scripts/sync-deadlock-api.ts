@@ -42,6 +42,19 @@ const firstPos = (...vals: unknown[]): number | null => {
     return null;
 };
 
+// Infer which computed stat a stacking/active-buff property boosts, from its name
+// (these properties carry no provided_property_type). Shared by stacking + active buffs.
+const statFromPropName = (k: string): string | null =>
+    /FireRate/i.test(k) ? "weaponFireRate"
+    : /(WeaponPower|WeaponDamage|BaseAttack)/i.test(k) ? "bulletDamage"
+    : /Health/i.test(k) ? "maxHealth"
+    : /SprintSpeed/i.test(k) ? "sprintSpeed"
+    : /MoveSpeed/i.test(k) ? "moveSpeed"
+    : /(BulletResist|BulletArmor)/i.test(k) ? "bulletResist"
+    : /(SpiritResist|TechResist|MagicResist)/i.test(k) ? "spiritResist"
+    : /(SpiritPower|TechPower)/i.test(k) ? "spiritPower"
+    : null;
+
 // Source engine: ~52.49 units per meter
 const UNITS_PER_METER = 52.49;
 
@@ -187,21 +200,11 @@ function parseItemEffects(props: Record<string, any>, itemName: string) {
     const maxStacks = pf(props.MaxStacks?.value) || 0;
     const isStackKey = (k: string) => /(PerStack|PerKill)$/i.test(k) || /^Stacking[A-Z]/.test(k);
     if (maxStacks >= 2 && maxStacks <= 50) {
-        const statOf = (k: string): string | null =>
-            /FireRate/i.test(k) ? "weaponFireRate"
-            : /(WeaponPower|WeaponDamage|BaseAttack)/i.test(k) ? "bulletDamage"
-            : /Health/i.test(k) ? "maxHealth"
-            : /SprintSpeed/i.test(k) ? "sprintSpeed"
-            : /MoveSpeed/i.test(k) ? "moveSpeed"
-            : /(BulletResist|BulletArmor)/i.test(k) ? "bulletResist"
-            : /(SpiritResist|TechResist|MagicResist)/i.test(k) ? "spiritResist"
-            : /(SpiritPower|TechPower)/i.test(k) ? "spiritPower"
-            : null;
         let emittedModeled = false;
         for (const k of Object.keys(props)) {
             if (!isStackKey(k)) continue;
             const perStack = pf(props[k]?.value); // tolerates unit suffixes ("0.15m")
-            const stat = statOf(k);
+            const stat = statFromPropName(k);
             if (perStack && stat) { add({ kind: "stacking", value: perStack, stat, maxStacks }); emittedModeled = true; }
         }
         // Display-only marker so the slider still appears for stacking items whose per-stack
@@ -258,16 +261,6 @@ async function main() {
             // provided_property_type (Blood Tribute: BonusFireRate), or an "Active*"-prefixed
             // property with neither, whose stat we infer from the name (Vampiric Burst:
             // ActiveBonusFireRate). Both apply only while "Actives firing" is on.
-            const statFromName = (k: string): string | null =>
-                /FireRate/i.test(k) ? "weaponFireRate"
-                : /(WeaponPower|WeaponDamage|BaseAttack)/i.test(k) ? "bulletDamage"
-                : /SprintSpeed/i.test(k) ? "sprintSpeed"
-                : /MoveSpeed/i.test(k) ? "moveSpeed"
-                : /(BulletResist|BulletArmor)/i.test(k) ? "bulletResist"
-                : /(SpiritResist|TechResist)/i.test(k) ? "spiritResist"
-                : /(SpiritPower|TechPower)/i.test(k) ? "spiritPower"
-                : /Health/i.test(k) ? "maxHealth"
-                : null;
             for (const [k, raw] of Object.entries(it.properties || {})) {
                 const pr = raw as { usage_flags?: string[]; provided_property_type?: string; value?: unknown };
                 const v = Number(pr?.value);
@@ -276,7 +269,7 @@ async function main() {
                 if (pr?.usage_flags?.includes("ConditionallyApplied") && pr.provided_property_type) {
                     stat = MOD_MAP[pr.provided_property_type]?.[0] ?? null;
                 } else if (/^Active[A-Z]/.test(k)) {
-                    stat = statFromName(k);
+                    stat = statFromPropName(k);
                 }
                 if (stat) eff.push({ kind: "activeBuff", value: v, stat, itemName: `${display}:${k}` });
             }

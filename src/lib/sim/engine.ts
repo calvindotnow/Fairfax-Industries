@@ -280,18 +280,18 @@ function buildAbilityRows(
  * weapon% bucket additively. We recover the item weapon% sum so the conditional
  * is applied additively, not as a naive multiply on top.
  */
+/** Sum of percent bonuses to a stat across a set of items (additive % stacking). */
+export function sumPercentModifiers(items: { modifiers?: StatModifier[] }[], stat: string): number {
+    return items.flatMap((it) => it.modifiers ?? []).filter((m) => m.statName === stat).reduce((s, m) => s + (m.percentBonus ?? 0), 0);
+}
+
 function conditionalWeaponMult(
     items: ItemData[],
     effects: ItemEffect[],
     range: number,
     investmentWeaponPct: number
 ): number {
-    const sumItemWeaponPct =
-        investmentWeaponPct +
-        items
-            .flatMap((it) => it.modifiers ?? [])
-            .filter((m) => m.statName === "bulletDamage")
-            .reduce((s, m) => s + (m.percentBonus ?? 0), 0);
+    const sumItemWeaponPct = investmentWeaponPct + sumPercentModifiers(items, "bulletDamage");
     const condPct = effects
         .filter((e) => e.kind === "conditionalWeaponPct")
         .reduce((s, e) => {
@@ -321,10 +321,7 @@ function conditionalFireRateMult(items: ItemData[], effects: ItemEffect[]): numb
         .filter((e) => e.kind === "conditionalFireRate")
         .reduce((s, e) => s + (e.value - (e.baseValue ?? 0)), 0);
     if (delta === 0) return 1;
-    const baseSum = items
-        .flatMap((it) => it.modifiers ?? [])
-        .filter((m) => m.statName === "weaponFireRate")
-        .reduce((s, m) => s + (m.percentBonus ?? 0), 0);
+    const baseSum = sumPercentModifiers(items, "weaponFireRate");
     return (1 + (baseSum + delta) / 100) / (1 + baseSum / 100);
 }
 
@@ -405,7 +402,10 @@ function computeBurst(
 // ─── The single entry point ───────────────────────────────────────────────────
 export function simulate(build: Build, target: Target, opts: SimOptions): SimResult {
     const { hero, items } = build;
-    const effects = items.flatMap((it) => parseEffects(it.effects));
+    // Parse each item's effects once, keeping the item association (stacking needs the
+    // item id for per-item stack counts); `effects` is the flattened view for everything else.
+    const itemEffects = items.map((it) => ({ it, effects: parseEffects(it.effects) }));
+    const effects = itemEffects.flatMap((x) => x.effects);
     const disabled = new Set(opts.disabledAbilityIds ?? []);
 
     const soulsSpent = items.reduce((sum, it) => sum + (it.soulCost ?? 0), 0);
@@ -420,8 +420,8 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
     // Stacking items (Berserker/Glass Cannon): fold `stacks × per-stack` into the stat
     // sums as synthetic modifiers. Stacks are per item (item id → count), defaulting to the
     // item's own max when unset. Spirit power is a flat add; weapon damage / fire rate are %.
-    const stackMods: StatModifier[] = items.flatMap((it) =>
-        parseEffects(it.effects)
+    const stackMods: StatModifier[] = itemEffects.flatMap(({ it, effects: effs }) =>
+        effs
             .filter((e) => e.kind === "stacking" && e.stat)
             .map((e) => {
                 const max = e.maxStacks ?? 0;
@@ -507,11 +507,9 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
     // separately, not in burst.
     const lightMeleeBase = hero.lightMeleeDamage ?? 0;
     const meleeGrowth = lightMeleeBase > 0 ? 1 + Math.max(0, level - 1) * ((hero.meleePerLevel ?? 0) / lightMeleeBase) : 1;
-    const sumPct = (list: ItemData[], stat: string) =>
-        list.flatMap((it) => it.modifiers ?? []).filter((m) => m.statName === stat).reduce((s, m) => s + (m.percentBonus ?? 0), 0);
-    const weaponPctSum = inv.weaponPct + sumPct(items, "bulletDamage");
-    const meleeMult = 1 + (sumPct(items, "meleeDamage") + 0.5 * weaponPctSum) / 100;
-    const meleeResistFactor = 1 - sumPct(targetItems, "meleeResist") / 100;
+    const weaponPctSum = inv.weaponPct + sumPercentModifiers(items, "bulletDamage");
+    const meleeMult = 1 + (sumPercentModifiers(items, "meleeDamage") + 0.5 * weaponPctSum) / 100;
+    const meleeResistFactor = 1 - sumPercentModifiers(targetItems, "meleeResist") / 100;
     const melee = {
         light: lightMeleeBase * meleeGrowth * meleeMult * meleeResistFactor,
         heavy: (hero.heavyMeleeDamage ?? 0) * meleeGrowth * meleeMult * meleeResistFactor,

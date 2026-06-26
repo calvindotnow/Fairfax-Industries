@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
-import { simulate, levelFromSouls, parseEffects, deriveAbilityScaling, type SimResult } from "@/lib/sim";
+import { simulate, levelFromSouls, parseEffects, deriveAbilityScaling, sumPercentModifiers, type SimResult } from "@/lib/sim";
 import { encodeBuild, type ShareState } from "@/lib/build-code";
 import { useIsNarrow } from "@/lib/use-narrow";
 import BuyMenu from "@/components/buy-menu";
@@ -48,8 +48,8 @@ const TOUR_STEPS: TourStep[] = [
     },
     {
         target: "damage",
-        title: "Read the damage",
-        body: <>See {emph("burst")}, sustained DPS, and time-to-kill for the matchup. The {emph("ⓘ")} dots and &ldquo;How this is calculated&rdquo; break down every number.</>,
+        title: "Read the build — three lenses",
+        body: <>Switch the tabs on the right: {emph("Damage")} (burst, sustained DPS, time-to-kill), {emph("Vitality")} (health, resists, effective HP), and {emph("Spirit")} (power + ability output). The {emph("scenario")} row tunes the fight — range, hitting an enemy, resist debuffs, stacks — and the {emph("ⓘ")} dots explain every number.</>,
     },
     {
         target: "progression",
@@ -271,6 +271,8 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
             .filter((x): x is { name: string; pct: number; kind: "kill" | "bonus" } => x != null),
         [hero]
     );
+    // Attacker's melee resist (Vitality tab) — only items carry it, no base stat.
+    const equippedMeleeResist = useMemo(() => sumPercentModifiers(equipped, "meleeResist"), [equipped]);
 
     // Build progression (FR-1): preview the active build at a purchase checkpoint —
     // the partial loadout you'd own by step N — without touching the live calculator.
@@ -572,7 +574,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                 {/* Damage calculator */}
                 <div data-tour="damage" style={{ padding: 18, borderLeft: narrow ? "none" : "1px solid var(--border)", borderTop: narrow ? "1px solid var(--border)" : "none" }}>
                     <OverviewTabs active={overviewTab} onChange={setOverviewTab} />
-                    {overviewTab === "vitality" && <VitalityPanel hs={hs} hero={hero} meleeResist={equipped.reduce((s, it) => s + it.modifiers.filter((m) => m.statName === "meleeResist").reduce((a, m) => a + m.percentBonus, 0), 0)} critReductionPct={critReductionPct} fmt={fmt} />}
+                    {overviewTab === "vitality" && <VitalityPanel hs={hs} hero={hero} meleeResist={equippedMeleeResist} critReductionPct={critReductionPct} fmt={fmt} />}
                     {overviewTab === "spirit" && <SpiritPanel hs={hs} abilities={result.abilities} fmt={fmt} />}
                     {overviewTab === "damage" && (<>
                     {(() => { const RMAX = 50; const pct = (m: number) => `${Math.min(100, (m / RMAX) * 100)}%`; return (
@@ -617,24 +619,10 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                     )}
                     {/* Accuracy + headshot rate sit next to the sustained number they scale. */}
                     <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 12, flexWrap: "wrap" }}>
-                        <div style={{ flex: 1, minWidth: 150, display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
-                                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-dim)" }}>Accuracy</span>
-                                <InfoDot tip="Share of shots that land. Scales sustained DPS and time-to-kill — over a real fight, misses don't damage. Burst assumes your combo lands." />
-                            </span>
-                            <input type="range" min={0} max={100} step={1} value={accuracy} onChange={(e) => setAccuracy(Number(e.target.value))} aria-label="Accuracy percent"
-                                style={{ flex: 1, accentColor: "var(--brass-500)" }} />
-                            <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 13, color: "var(--text)", width: 38, textAlign: "right" }}>{accuracy}%</span>
-                        </div>
-                        <div style={{ flex: 1, minWidth: 150, display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
-                                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-dim)" }}>Headshot</span>
-                                <InfoDot tip="Share of your landed shots that hit the head over a sustained fight — adds the 1.65× crit bonus to sustained DPS. (The Headshots field below is the exact count for the burst combo.)" />
-                            </span>
-                            <input type="range" min={0} max={100} step={1} value={headshotPct} onChange={(e) => setHeadshotPct(Number(e.target.value))} aria-label="Headshot percent"
-                                style={{ flex: 1, accentColor: "var(--brass-500)" }} />
-                            <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 13, color: "var(--text)", width: 38, textAlign: "right" }}>{headshotPct}%</span>
-                        </div>
+                        <PercentSlider label="Accuracy" value={accuracy} onChange={setAccuracy}
+                            tip="Share of shots that land. Scales sustained DPS and time-to-kill — over a real fight, misses don't damage. Burst assumes your combo lands." />
+                        <PercentSlider label="Headshot" value={headshotPct} onChange={setHeadshotPct}
+                            tip="Share of your landed shots that hit the head over a sustained fight — adds the 1.65× crit bonus to sustained DPS. (The Headshots field below is the exact count for the burst combo.)" />
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
                         <StatReadout label="Sustained DPS" value={fmt(result.sustainedDps)} unit="dps" accent tip={`Damage per second firing continuously at this range (fire rate × damage per shot, after the target's resists)${result.procDps > 0 ? `, including ${fmt(result.procDps)} from on-hit procs` : ""}${accuracy < 100 ? `, scaled by ${accuracy}% accuracy` : ""}.`} />
@@ -1321,6 +1309,21 @@ function StackChip({ name, value, max, modeled, onChange }: { name: string; valu
                 </>
             )}
         </span>
+    );
+}
+
+// A compact 0–100% slider (Accuracy, Headshot rate) that scales sustained DPS.
+function PercentSlider({ label, value, onChange, tip }: { label: string; value: number; onChange: (n: number) => void; tip: string }) {
+    return (
+        <div style={{ flex: 1, minWidth: 150, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-dim)" }}>{label}</span>
+                <InfoDot tip={tip} />
+            </span>
+            <input type="range" min={0} max={100} step={1} value={value} onChange={(e) => onChange(Number(e.target.value))} aria-label={`${label} percent`}
+                style={{ flex: 1, accentColor: "var(--brass-500)" }} />
+            <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 13, color: "var(--text)", width: 38, textAlign: "right" }}>{value}%</span>
+        </div>
     );
 }
 

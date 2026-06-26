@@ -23,9 +23,10 @@ export default async function HomePage() {
           <span className="italic text-primary">Prove</span> it.
         </h1>
         <p className="mt-6 text-lg leading-relaxed text-muted-foreground">
-          Assemble a hero and items, then watch real damage, breakpoints, and
-          time-to-kill computed against any enemy — backed by live patch data.
-          No more doing the math by hand in the practice range.
+          Kit out any hero and see exactly what the build does to an enemy —
+          burst, sustained DPS, time-to-kill, the soul breakpoints, even the
+          health line where your execute lands. Live patch data, recomputed as
+          you tweak. No more eyeballing it in the practice range.
         </p>
         <div className="mt-8 flex items-center gap-4">
           <Link
