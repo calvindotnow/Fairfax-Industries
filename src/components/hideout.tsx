@@ -504,8 +504,10 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                     {/* Combat scenario — toggles that drive conditional item effects (one place). */}
                     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7, marginBottom: 16 }}>
                         <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--text-dim)", marginRight: 2 }}>Scenario</span>
-                        <ScenarioChip label="In close range" on={range <= 15} onClick={() => setRange(range <= 15 ? 25 : 8)}
-                            tip="Range-bound items (Close Quarters, Sharpshooter, Point Blank) react to the range above. Snaps close (8 m) / ranged (25 m)." />
+                        <ScenarioChip label="Close range" on={range <= 15} onClick={() => setRange(8)}
+                            tip="Within 15 m — close-range items apply (Close Quarters, Point Blank). Snaps the range to 8 m." />
+                        <ScenarioChip label="Long range" on={range >= 15} onClick={() => setRange(25)}
+                            tip="Beyond 15 m — long-range items apply (Sharpshooter, Long Range). Snaps the range to 25 m." />
                         <ScenarioChip label="Hitting enemy" on={hittingEnemy} onClick={() => setHittingEnemy((v) => !v)}
                             tip="Activated fire-rate tiers fire while you're hitting an enemy hero (e.g. Burst Fire 10% → 32%)." />
                         <ScenarioChip label="Resist debuffs" on={resistDebuffs} onClick={() => setResistDebuffs((v) => !v)}
