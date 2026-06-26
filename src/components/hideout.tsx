@@ -10,6 +10,7 @@ import { encodeBuild, type ShareState } from "@/lib/build-code";
 import { defaultShotsForFireRate, secondsOfFire } from "@/lib/hideout-utils";
 import { useIsNarrow } from "@/lib/use-narrow";
 import BuyMenu from "@/components/buy-menu";
+import { CounterPanel } from "@/components/counter-panel";
 import { HeroPicker } from "@/components/hero-picker";
 import OnboardingTour, { type TourStep } from "@/components/onboarding-tour";
 import RollingNumber from "@/components/rolling-number";
@@ -127,7 +128,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
         (heroes.find((h) => h.id === id)?.abilities ?? []).filter((a) => a.type === "ultimate").map((a) => a.id);
     const [disabledAbilities, setDisabledAbilities] = useState<Set<number>>(() => new Set(ultIdsOf(startHeroId)));
     const [showCalc, setShowCalc] = useState(false);
-    const [overviewTab, setOverviewTab] = useState<"damage" | "vitality" | "spirit">("damage");
+    const [overviewTab, setOverviewTab] = useState<"damage" | "vitality" | "spirit" | "counter">("damage");
     // Build progression (FR-1): scrub the ordered purchase timeline. `checkpoint`
     // is an index into the active loadout being previewed (null = full build).
     const [checkpoint, setCheckpoint] = useState<number | null>(null);
@@ -617,6 +618,19 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                     <OverviewTabs active={overviewTab} onChange={setOverviewTab} />
                     {overviewTab === "vitality" && <VitalityPanel hs={hs} hero={hero} meleeResist={equippedMeleeResist} critReductionPct={critReductionPct} fmt={fmt} />}
                     {overviewTab === "spirit" && <SpiritPanel hs={hs} abilities={result.abilities} itemDamage={result.spiritItemDamage} fmt={fmt} />}
+                    {/* v1 lane-ready seam: single target passed here; v1.x will map this over an enemies array */}
+                    {overviewTab === "counter" && hero && target && (
+                        <CounterPanel
+                            hero={hero}
+                            enemy={target}
+                            yourItems={equipped}
+                            enemyItems={targetEquipped}
+                            opts={{ range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring, stacksByItem, accuracy, headshotPct, abilityRanks, excludedActiveItemIds: [...excludedActives] }}
+                            items={items}
+                            onAddItem={(id) => (activeBuild === "B" ? setLoadoutB : setLoadoutA)((l) => l.length < MAX_LOADOUT && !l.includes(id) ? [...l, id] : l)}
+                            fmt={fmt}
+                        />
+                    )}
                     {overviewTab === "damage" && (<>
                     {(() => { const RMAX = 50; const pct = (m: number) => `${Math.min(100, (m / RMAX) * 100)}%`; return (
                     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
@@ -1211,11 +1225,12 @@ function HeroPortrait({ imageUrl, size, level }: { imageUrl?: string | null; siz
     );
 }
 
-function OverviewTabs({ active, onChange }: { active: "damage" | "vitality" | "spirit"; onChange: (t: "damage" | "vitality" | "spirit") => void }) {
+function OverviewTabs({ active, onChange }: { active: "damage" | "vitality" | "spirit" | "counter"; onChange: (t: "damage" | "vitality" | "spirit" | "counter") => void }) {
     const tabs = [
         ["damage", "Damage", "var(--brass-300)"],
         ["vitality", "Vitality", "var(--vitality-400)"],
         ["spirit", "Spirit", "var(--spirit-400)"],
+        ["counter", "Counter", "var(--danger-500)"],
     ] as const;
     const { containerRef, setRef, box } = useTabIndicator(active);
     const activeColor = tabs.find(([k]) => k === active)?.[2] ?? "var(--brass-300)";
