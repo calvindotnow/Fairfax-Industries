@@ -10,6 +10,7 @@ import { encodeBuild, type ShareState } from "@/lib/build-code";
 import { useIsNarrow } from "@/lib/use-narrow";
 import BuyMenu from "@/components/buy-menu";
 import OnboardingTour, { type TourStep } from "@/components/onboarding-tour";
+import SlotText from "@/components/slot-text";
 
 interface HideoutProps {
     heroes: HeroWithAbilities[];
@@ -1047,7 +1048,8 @@ function ShareBuildButton({ getUrl }: { getUrl: () => string }) {
                     background: copied ? "color-mix(in srgb, var(--cash-500) 16%, transparent)" : "var(--surface-raised)",
                     color: copied ? "var(--cash-500)" : "var(--text-muted)", transition: "color 120ms, background 120ms, border-color 120ms",
                 }}>
-                <span style={{ fontSize: 13 }}>{copied ? "✓" : "⎘"}</span>{label}
+                <span style={{ fontSize: 13 }}>{copied ? "✓" : "⎘"}</span>
+                <SlotText text={label} />
             </button>
             {status === "fallback" && (
                 <input ref={inputRef} readOnly value={url} onFocus={(e) => e.currentTarget.select()}
