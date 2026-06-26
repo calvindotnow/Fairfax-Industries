@@ -158,10 +158,12 @@ Canonical patterns already in the code — reuse them rather than inventing new 
 - **Section head** — `SectionHead`: Oswald 600, 15px, uppercase, `0.08em`, optional right-side slot.
 - **Stat readout** — `StatReadout`: tiny uppercase dim label over an Oswald tabular number; `accent` variant = larger, `--brass-300`, brass glow.
 - **Burst chip** — `BurstChip`: small padded pill, category-toned via `CHIP_TONES` (`{fg,bg,bd}` for weapon/vitality/spirit/brass); shows a label (with optional `×count`) over a value.
+- **Animated number** — `RollingNumber` (`rolling-number.tsx`): wrap a formatted stat string; it plays a debounced `num-pop` rise + de-blur when the value settles. Use for live-updating figures (burst total, `StatReadout`, `OverviewStat`, compare column). See §8.
+- **Slot-text label** — `SlotText` (`slot-text.tsx`): per-character "slot machine" roll when a label swaps; on the copy-build-link button. See §8.
 - **Buttons**
   - *Primary (brass):* `background: var(--primary); color: var(--primary-foreground); border-radius: var(--r-md)`, hover `opacity .9`. (landing CTA)
-  - *Toggle / segmented:* bordered; active state uses `color-mix(in srgb, <accent> 16%, transparent)` fill + an inset bottom border in the accent; Oswald, uppercase, small. (`MatchLevelButton`, `BuyForToggle`, category tabs)
-  - *Share/copy:* uppercase Oswald; success state flips border/text to `--cash-500`. (`ShareBuildButton`)
+  - *Toggle / segmented:* bordered; active state uses `color-mix(in srgb, <accent> 16%, transparent)` fill + an inset bottom border in the accent; Oswald, uppercase, small. (`MatchLevelButton`, `BuyForToggle`, category tabs). **Tab sets** (`OverviewTabs` underline, `BuildTabs` pill) animate the active marker with a sliding indicator (`useTabIndicator`, see §8).
+  - *Share/copy:* uppercase Oswald; label + icon animate via the **slot-text roll** (`SlotText`) on copy ("Copy build link" → "Link copied", ⎘→✓); success state flips border/text to `--cash-500`. (`ShareBuildButton`)
 - **Tooltip / popover** — `position: fixed`, follows cursor, `background: linear-gradient(180deg, var(--ink-820), var(--ink-870))`, `border: 1px solid var(--{category}-frame)`, `--r-md`, `boxShadow: var(--elev-pop)`, a 3px category color bar on top, `pointerEvents: none`. (`ItemTooltip`, `MiniStat` tip)
 - **Select** — custom wrapper (`surface-raised` + `border-strong` + `--r-sm`) around a native `<select>`, with a category-colored diamond `◆`. (`HeroSelect`)
 - **Cost pill** — `§` glyph in `--cash-500` + tabular number, on `--cash-pill-*`. (`CostPill`)
@@ -183,7 +185,17 @@ Canonical patterns already in the code — reuse them rather than inventing new 
 
 ## 8. Motion
 
-CSS transitions only — short and quiet (`opacity` / `background` / `transform`, ~`120ms`). `framer-motion` is a dependency but **unused**; don't reach for it without a real need. Keep motion subtle; the product should feel precise, not animated.
+**Shared motion tokens** (in `globals.css` `:root`): `--motion-fast: 120ms` (color/border state changes), `--motion-base: 240ms` (entrances, slides, the number pop), and `--ease-out: cubic-bezier(0.2, 0.8, 0.2, 1)` — the shared easing curve, originally the slot-text roll curve. Use these rather than hardcoding durations so micro-interactions feel like one system.
+
+The vocabulary is **pure CSS** — transitions plus one keyframe (`num-pop`). `framer-motion` is still installed but **unused**; the motions below are hand-rolled and don't need it, so don't reach for it without a real new need. Keep motion subtle and purposeful — the product should feel precise and *reactive* (numbers respond to your edits), not decorative.
+
+Shipped motions:
+- **State transitions** — short `transition:` on `color` / `background` / `border` (`--motion-fast`) on chips, buttons, tabs. The baseline everywhere.
+- **Slot-text roll** — `SlotText` (`src/components/slot-text.tsx`): a per-character "slot machine" roll when a label swaps. On the copy-build-link button ("Copy build link" ⟷ "Link copied", icon ⎘⟷✓). Pure CSS transforms, no external stylesheet, debounced via `requestAnimationFrame`.
+- **Number pop** — `RollingNumber` (`src/components/rolling-number.tsx`): stat readouts rise + de-blur (the `num-pop` keyframe, `--motion-base`) when their value settles to a new number. Debounced so dragging a slider scrubs the number live instead of strobing the blur; never pops on initial load. Wired into the burst total, `StatReadout`, `OverviewStat`, and the active column of `CompareRow`.
+- **Sliding tab indicator** — `OverviewTabs` (underline) and `BuildTabs` (A/B pill) slide to the active tab via a shared `useTabIndicator` hook (`hideout.tsx`): it measures the active button's box and lets CSS transition `left` / `width`. Replaces the old instant border/background swap.
+
+**Reduced motion:** a global `@media (prefers-reduced-motion: reduce)` rule in `globals.css` neutralizes all transitions, animations, and the slot-text roll. New motion inherits this floor automatically — no per-component handling needed.
 
 ---
 
@@ -194,6 +206,7 @@ Documented honestly so new components don't inherit these:
 1. **Contrast:** ~~`--text-dim` (`#75716a`) ≈ 3:1, fails AA~~ — **resolved:** `--text-dim` raised to `#88837a` (≈4.66:1 on `--background`, passes AA). It's still the dimmest text token; don't go fainter than this for anything that must be read.
 2. **Color-only meaning:** weapon/vitality/spirit hue is now paired with text where it stood alone — shop category **tabs** carry the category word, burst **chips** and resist labels are text-described, and **ability rows** show a category tag. Still color-only: the small loadout/shop **tile frames** (category is named in the item details tooltip/sheet). Keep pairing color with text/shape on new surfaces. (Tracked: §7.1b.)
 3. **Hover-only details:** ~~tooltips are cursor-driven with `pointerEvents: none`~~ — **resolved for the shop:** tiles now show details on keyboard `focus` and open the `ItemSheet` on touch (see §6). Apply the same hover-or-tap split to any new detail surface.
+4. **Reduced motion:** handled globally — a `prefers-reduced-motion: reduce` floor in `globals.css` neutralizes transitions, animations, and the slot-text roll. New motion inherits it automatically; don't hand-roll per-component guards.
 
 **Target:** WCAG 2.1 AA. New work should meet it even though existing code doesn't everywhere yet.
 
@@ -207,6 +220,7 @@ Sentence case, terse, confident, editorial. ALL-CAPS only for overlines, section
 
 ## Changelog
 
+- **2026-06-26** — Motion pass: shared motion tokens (`--motion-fast` / `--motion-base` / `--ease-out`) + a `num-pop` keyframe in `globals.css`. Three micro-interactions, all pure-CSS (no `framer-motion`): **slot-text copy roll** (`SlotText`) on the share button; **number pop** (`RollingNumber`, debounced) on the burst total + stat readouts + active compare column; **sliding tab indicators** on `OverviewTabs`/`BuildTabs` via `useTabIndicator`. Added a global `prefers-reduced-motion` floor that also covers the existing transitions. (§6, §8, §9.4.)
 - **2026-06-25** — Feature-requests batch (FR-1…FR-8): build **progression panel** (ordered buy-order timeline + level checkpoints via `levelFromSouls`; click a step to preview the partial build without touching the live calc; reorder with arrows; order travels in the share code) — FR-1 flagship; sprint/stamina movement stats on the attacker readout; `MiniStat` hover-intent delay (~350ms); DoT copy/layout cleanup; bought-item readability fix (non-color "owned" ✓ badge + contrast-safe label); smaller VS-band avatars (80→64); hero pages now `/heroes/<slug>` (numeric back-compat) with a per-ability stat table; item browser searches descriptions + shows fuller text. (Compare UX rework handled concurrently in a sibling change.)
 - **2026-06-25** — Wave 4 (execution plan): hero pages (`/heroes`, `/heroes/[id]`) + item browser (`/items`); shareable build pages (`/b/[code]`, server-decoded + crawlable, with `generateMetadata`); A/B build compare (lock build A → assemble an empty build B; the Compare button expands/minimizes without discarding either; A|B tabs swap which you edit; bar-graph deltas with green/red +/− plus defensive stats — additive); patch-stable share codes (name-hash, V1 back-compat); engine depth (procs folded into sustained DPS; melee surfaced); patch-history snapshots + `/patch-notes`; hard 12-item loadout cap. Nav gained Heroes/Items; footer links Methodology + Patch notes.
 - **2026-06-25** — Wave 2 (execution plan): footer **data-freshness badge** (from `max(heroes.updatedAt)`); a `/methodology` page + a "How this is calculated" disclosure in the Damage panel; first-run **onboarding card** (localStorage-dismissed) and reusable **`InfoDot`** glossary popovers on stat labels; a transient **merge toast** when item upgrades collapse components; **`--text-dim` raised to AA** and category text labels added (resolves a11y gaps #1 and most of #2).

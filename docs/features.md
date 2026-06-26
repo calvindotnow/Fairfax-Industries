@@ -43,6 +43,7 @@ clean, portable, test-covered module.
 - **A/B build comparison** — lock build A and edit a second build B side by side; green/red reads from the build you're editing. Additive to attacker-vs-target.
 - **Build progression** — a build is an ordered purchase timeline; scrub to a level checkpoint to preview the partial build (level derived from cumulative souls).
 - **Onboarding** — a multi-step spotlight tour anchored to real UI; seeds a demo build so panels are live. Replay link in the footer.
+- **Reactive motion** — micro-interactions that make the live calculator feel responsive: stat numbers (burst total, readouts) pop on change, the overview/build tabs slide to the active one, and the share button's copy label rolls per-character. Pure-CSS and reduced-motion-aware; details in [style.md §8](style.md#8-motion).
 
 ### The damage engine (`src/lib/sim/`)
 - Weapon DPS with falloff + per-pellet folding; abilities (direct + DoT) with Spirit-power scaling; on-hit procs (in both burst **and** sustained, gated by real cooldowns); headshots with the base 1.65× crit multiplier + flat bonuses, reduced by the target's crit-damage-taken.
