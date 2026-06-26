@@ -56,9 +56,9 @@ export function HeroPicker({
                     borderRadius: "var(--r-sm, 6px)", color: "var(--text)",
                   }}
                 >
-                  <span style={{ width: 44, height: 44, borderRadius: 6, overflow: "hidden", background: "var(--surface-well)" }}>
-                    {h.imageUrl ? <Image src={h.imageUrl} alt="" width={44} height={44} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
-                  </span>
+                  <div style={{ width: 44, height: 44, borderRadius: 6, overflow: "hidden", background: "var(--surface-well)", display: "flex" }}>
+                    {h.imageUrl ? <Image src={h.imageUrl} alt="" role="presentation" width={44} height={44} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
+                  </div>
                   <span style={{ fontSize: 10, lineHeight: 1.1, textAlign: "center", color: selected ? accentColor : "var(--text-muted)" }}>{h.name}</span>
                 </button>
               );
