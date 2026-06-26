@@ -481,17 +481,21 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
     const accuracy = Math.max(0, Math.min(100, opts.accuracy ?? 100)) / 100;
     const sustainedDps = (combat.dps * cwm + procDps) * accuracy;
 
-    // Melee damage: base × per-level growth, then bullet resist (which reduces
-    // melee too, per the Deadlock wiki). Light grows by meleePerLevel each boon;
-    // heavy grows at the same fractional rate. Validated vs known values — e.g.
-    // Bebop heavy +2.91/boon = 1.58 × 116/63. Surfaced separately, not in burst.
-    // (Not yet modeled: the +50% Weapon-Damage scaling, melee-damage items, and
-    //  the separate Melee-Resist channel — see the melee notes.)
+    // Melee damage: base × per-level growth (heavy grows at light's fractional rate —
+    // validated vs known values, e.g. Bebop heavy +2.91/boon = 1.58 × 116/63), then
+    // melee-damage items + 50% of your bonus weapon damage, mitigated by the target's
+    // dedicated melee-resist channel (its own armour, not bullet armour). Surfaced
+    // separately, not in burst.
     const lightMeleeBase = hero.lightMeleeDamage ?? 0;
     const meleeGrowth = lightMeleeBase > 0 ? 1 + Math.max(0, level - 1) * ((hero.meleePerLevel ?? 0) / lightMeleeBase) : 1;
+    const sumPct = (list: ItemData[], stat: string) =>
+        list.flatMap((it) => it.modifiers ?? []).filter((m) => m.statName === stat).reduce((s, m) => s + (m.percentBonus ?? 0), 0);
+    const weaponPctSum = inv.weaponPct + sumPct(items, "bulletDamage");
+    const meleeMult = 1 + (sumPct(items, "meleeDamage") + 0.5 * weaponPctSum) / 100;
+    const meleeResistFactor = 1 - sumPct(targetItems, "meleeResist") / 100;
     const melee = {
-        light: lightMeleeBase * meleeGrowth * bulletResFactor,
-        heavy: (hero.heavyMeleeDamage ?? 0) * meleeGrowth * bulletResFactor,
+        light: lightMeleeBase * meleeGrowth * meleeMult * meleeResistFactor,
+        heavy: (hero.heavyMeleeDamage ?? 0) * meleeGrowth * meleeMult * meleeResistFactor,
     };
 
     const theirEhp = targetStats.maxHealth / Math.max(1 - (targetStats.bulletResist ?? 0) / 100, 0.05);

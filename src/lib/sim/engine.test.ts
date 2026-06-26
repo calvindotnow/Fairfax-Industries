@@ -141,6 +141,14 @@ describe("combat-scenario conditionals", () => {
         expect(half.sustainedDps).toBeCloseTo(full.sustainedDps * 0.5);
         expect(half.burst.total).toBeCloseTo(full.burst.total);
     });
+
+    test("melee scales with melee-damage items and is cut by the target's melee resist", () => {
+        const bare = simulate({ hero: hero("Abrams"), items: [] }, { hero: hero("Haze") }, opts());
+        const withMelee = simulate({ hero: hero("Abrams"), items: [item("Lifestrike")] }, { hero: hero("Haze") }, opts());
+        expect(withMelee.melee.heavy).toBeGreaterThan(bare.melee.heavy);
+        const vsResist = simulate({ hero: hero("Abrams"), items: [] }, { hero: hero("Haze"), items: [item("Juggernaut")] }, opts());
+        expect(vsResist.melee.heavy).toBeLessThan(bare.melee.heavy);
+    });
 });
 
 describe("abilities", () => {
@@ -179,7 +187,9 @@ describe("engine depth (R-4)", () => {
 
     test("melee scales up with level, preserving the heavy:light ratio", () => {
         const bebop = hero("Bebop");
-        const t4 = byCategoryDesc("weapon")[0]; // 6,400 souls → ~level 11
+        // Raise the level with a pure-vitality item (no weapon damage) — otherwise the
+        // 50%-weapon-damage melee scaling would inflate the per-boon growth we're measuring.
+        const t4 = byCategoryDesc("vitality").find((i) => !(i.modifiers ?? []).some((m) => m.statName === "bulletDamage"))!;
         const lvl1 = simulate({ hero: bebop, items: [] }, { hero: hero("Haze") }, opts());
         const lvlN = simulate({ hero: bebop, items: [t4] }, { hero: hero("Haze") }, opts());
         expect(lvlN.level).toBeGreaterThan(1);

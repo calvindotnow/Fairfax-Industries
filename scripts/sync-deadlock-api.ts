@@ -58,6 +58,8 @@ const MOD_MAP: Record<string, [string, "flat" | "percent"]> = {
     MODIFIER_VALUE_MOVEMENT_SPEED_MAX: ["moveSpeed", "flat"],
     MODIFIER_VALUE_SPRINT_SPEED_BONUS: ["sprintSpeed", "flat"],
     MODIFIER_VALUE_STAMINA: ["stamina", "flat"],
+    MODIFIER_VALUE_MELEE_DAMAGE_INCREASE: ["meleeDamage", "percent"],
+    MODIFIER_VALUE_MELEE_RESIST: ["meleeResist", "percent"],
 };
 
 // Pick the first real raster image (.webp/.png); ignores malformed paths like `panorama:""`.
