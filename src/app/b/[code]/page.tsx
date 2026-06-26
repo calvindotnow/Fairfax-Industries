@@ -1,11 +1,9 @@
-import { getHeroes, getItems } from "@/lib/data";
-import { decodeBuild } from "@/lib/build-code";
-import { simulate } from "@/lib/sim";
 import type { ItemWithModifiers } from "@/db/schema";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import { resolveBuild } from "./resolve";
 
 export const dynamic = "force-dynamic";
 
@@ -14,30 +12,6 @@ const CAT_COLOR: Record<string, string> = {
     vitality: "var(--vitality-400)",
     spirit: "var(--spirit-400)",
 };
-
-async function loadData() {
-    return { heroes: getHeroes(), items: getItems() };
-}
-
-// Resolve a share code into the heroes, items, and simulated result. Ultimates
-// default off, mirroring the build tool, since the code doesn't store ability toggles.
-async function resolveBuild(code: string) {
-    const { heroes, items } = await loadData();
-    const s = decodeBuild(code, heroes, items);
-    if (!s) return null;
-    const hero = heroes.find((h) => h.id === s.heroId) ?? null;
-    const target = heroes.find((h) => h.id === s.targetId) ?? null;
-    if (!hero || !target) return null;
-    const equipped = s.loadout.map((id) => items.find((i) => i.id === id)).filter(Boolean) as ItemWithModifiers[];
-    const targetEquipped = s.targetLoadout.map((id) => items.find((i) => i.id === id)).filter(Boolean) as ItemWithModifiers[];
-    const ultIds = hero.abilities.filter((a) => a.type === "ultimate").map((a) => a.id);
-    const result = simulate(
-        { hero, items: equipped },
-        { hero: target, items: targetEquipped, matchAttackerLevel: s.matchTargetLevel },
-        { range: s.range, shots: s.shots, headshots: s.headshots, disabledAbilityIds: ultIds }
-    );
-    return { hero, target, equipped, targetEquipped, result };
-}
 
 export async function generateMetadata({ params }: { params: Promise<{ code: string }> }): Promise<Metadata> {
     const { code } = await params;
