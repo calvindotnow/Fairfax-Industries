@@ -1,4 +1,4 @@
-import { db } from "@/db";
+import { getSnapshots } from "@/lib/data";
 import { diffSnapshots, type SnapshotPayload, type EntityChange } from "@/lib/patch-diff";
 import { format } from "date-fns";
 import Link from "next/link";
@@ -8,10 +8,7 @@ export const dynamic = "force-dynamic";
 const fmt = (n: number | null) => (n == null ? "—" : Number.isInteger(n) ? n.toLocaleString() : n.toFixed(2));
 
 export default async function PatchNotesPage() {
-    const snaps = await db.query.statSnapshots.findMany({
-        orderBy: (s, { desc }) => [desc(s.takenAt)],
-        limit: 2,
-    });
+    const snaps = getSnapshots();
 
     return (
         <div className="space-y-10">

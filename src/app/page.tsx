@@ -1,6 +1,4 @@
-import { db } from "@/db";
-import { heroes, items } from "@/db/schema";
-import { sql, isNotNull } from "drizzle-orm";
+import { getHeroes, getItems } from "@/lib/data";
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowRight } from "lucide-react";
@@ -8,14 +6,14 @@ import { ArrowRight } from "lucide-react";
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const [heroRow] = await db.select({ count: sql<number>`count(*)` }).from(heroes);
-  const [itemRow] = await db.select({ count: sql<number>`count(*)` }).from(items);
+  const allHeroes = getHeroes();
+  const heroRow = { count: allHeroes.length };
+  const itemRow = { count: getItems().length };
 
-  const portraits = await db
-    .select({ id: heroes.id, name: heroes.name, image: heroes.imageUrl })
-    .from(heroes)
-    .where(isNotNull(heroes.imageUrl))
-    .limit(12);
+  const portraits = allHeroes
+    .filter((h) => h.imageUrl)
+    .slice(0, 12)
+    .map((h) => ({ id: h.id, name: h.name, image: h.imageUrl }));
 
   return (
     <div className="space-y-20">

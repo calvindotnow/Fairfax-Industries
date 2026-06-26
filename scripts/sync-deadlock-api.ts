@@ -5,6 +5,7 @@
  * Source: https://api.deadlock-api.com/v1/assets  (open, community-run)
  * This replaces the hand-seeded placeholder heroes/items/abilities.
  */
+import { writeFileSync } from "node:fs";
 import { eq } from "drizzle-orm";
 import { db } from "../src/db";
 import { heroes, abilities, items, itemStatModifiers } from "../src/db/schema";
@@ -511,6 +512,17 @@ async function main() {
     console.log(`  inserted ${heroCount} heroes, ${abilityCount} abilities`);
     await captureSnapshot();
     console.log("  captured stat snapshot for patch history");
+
+    // Bake the data into a committed module the app imports at build time, so it runs
+    // with no runtime database and deploys to any serverless host. Regenerated each sync.
+    const bakedHeroes = await db.query.heroes.findMany({ with: { abilities: true }, orderBy: (h, { asc }) => [asc(h.name)] });
+    const bakedItems = await db.query.items.findMany({ with: { modifiers: true }, orderBy: (i, { asc }) => [asc(i.tier), asc(i.name)] });
+    const bakedSnaps = await db.query.statSnapshots.findMany({ orderBy: (sn, { desc }) => [desc(sn.takenAt)], limit: 2 });
+    writeFileSync(
+        new URL("../src/lib/baked-data.json", import.meta.url),
+        JSON.stringify({ syncedAt: new Date().toISOString(), heroes: bakedHeroes, items: bakedItems, snapshots: bakedSnaps })
+    );
+    console.log(`  baked data → src/lib/baked-data.json (${bakedHeroes.length} heroes, ${bakedItems.length} items)`);
     console.log("Done.");
 }
 

@@ -142,5 +142,6 @@ export type NewItemStatModifier = typeof itemStatModifiers.$inferInsert;
 export type Ability = typeof abilities.$inferSelect;
 export type NewAbility = typeof abilities.$inferInsert;
 
+export type StatSnapshot = typeof statSnapshots.$inferSelect;
 export type ItemWithModifiers = Item & { modifiers: ItemStatModifier[] };
 export type HeroWithAbilities = Hero & { abilities: Ability[] };

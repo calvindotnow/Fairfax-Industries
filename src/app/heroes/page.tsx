@@ -1,14 +1,12 @@
-import { db } from "@/db";
 import Link from "next/link";
 import Image from "next/image";
 import { heroSlug } from "@/lib/slug";
+import { getHeroes } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
 export default async function HeroesPage() {
-  const roster = await db.query.heroes.findMany({
-    orderBy: (h, { asc }) => [asc(h.name)],
-  });
+  const roster = getHeroes();
 
   return (
     <div className="space-y-10">

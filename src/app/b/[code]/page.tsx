@@ -1,7 +1,7 @@
-import { db } from "@/db";
+import { getHeroes, getItems } from "@/lib/data";
 import { decodeBuild } from "@/lib/build-code";
 import { simulate } from "@/lib/sim";
-import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
+import type { ItemWithModifiers } from "@/db/schema";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
@@ -16,15 +16,7 @@ const CAT_COLOR: Record<string, string> = {
 };
 
 async function loadData() {
-    const heroes = (await db.query.heroes.findMany({
-        with: { abilities: true },
-        orderBy: (h, { asc }) => [asc(h.name)],
-    })) as HeroWithAbilities[];
-    const items = (await db.query.items.findMany({
-        with: { modifiers: true },
-        orderBy: (i, { asc }) => [asc(i.tier), asc(i.name)],
-    })) as ItemWithModifiers[];
-    return { heroes, items };
+    return { heroes: getHeroes(), items: getItems() };
 }
 
 // Resolve a share code into the heroes, items, and simulated result. Ultimates

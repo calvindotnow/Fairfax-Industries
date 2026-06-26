@@ -1,7 +1,6 @@
-import { db } from "@/db";
 import Hideout from "@/components/hideout";
 import { decodeBuild } from "@/lib/build-code";
-import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
+import { getHeroes, getItems } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -10,15 +9,8 @@ export default async function HideoutPage({
 }: {
     searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-    const heroes = (await db.query.heroes.findMany({
-        with: { abilities: true },
-        orderBy: (h, { asc }) => [asc(h.name)],
-    })) as HeroWithAbilities[];
-
-    const items = (await db.query.items.findMany({
-        with: { modifiers: true },
-        orderBy: (i, { asc }) => [asc(i.tier), asc(i.name)],
-    })) as ItemWithModifiers[];
+    const heroes = getHeroes();
+    const items = getItems();
 
     // Seed from the URL server-side so the right build/hero renders on the first
     // paint (no flash of the default before a client effect corrects it). A full

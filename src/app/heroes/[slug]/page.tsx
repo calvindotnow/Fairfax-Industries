@@ -1,11 +1,10 @@
-import { db } from "@/db";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { heroSlug } from "@/lib/slug";
 import { deriveAbilityScaling } from "@/lib/sim";
-import type { HeroWithAbilities } from "@/db/schema";
+import { getHeroes } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +16,7 @@ export default async function HeroDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const roster = (await db.query.heroes.findMany({
-    with: { abilities: true },
-  })) as HeroWithAbilities[];
+  const roster = getHeroes();
 
   // Resolve by name slug; fall back to numeric id for back-compat with old links.
   const numericId = Number(slug);

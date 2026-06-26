@@ -1,14 +1,10 @@
-import { db } from "@/db";
-import type { ItemWithModifiers } from "@/db/schema";
 import ItemBrowser from "./item-browser";
+import { getItems } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
 export default async function ItemsPage() {
-  const items = (await db.query.items.findMany({
-    with: { modifiers: true },
-    orderBy: (i, { asc }) => [asc(i.tier), asc(i.name)],
-  })) as ItemWithModifiers[];
+  const items = getItems();
 
   return (
     <div className="space-y-10">

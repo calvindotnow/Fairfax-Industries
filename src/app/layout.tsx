@@ -3,7 +3,7 @@ import Link from "next/link";
 import { formatDistanceToNow, format } from "date-fns";
 import "./globals.css";
 import { Navigation } from "@/components/navigation";
-import { db } from "@/db";
+import { getSyncedAt } from "@/lib/data";
 
 export const metadata: Metadata = {
   title: "Fairfax Industries — Deadlock Build Tool",
@@ -14,13 +14,8 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  // When game data was last synced — most-recently-updated hero stands in for
-  // the whole pull (no sync-meta table needed). date-fns is already a dep.
-  const latest = await db.query.heroes.findFirst({
-    orderBy: (h, { desc }) => [desc(h.updatedAt)],
-    columns: { updatedAt: true },
-  });
-  const syncedAt = latest?.updatedAt ?? null;
+  // When the baked game data was last synced (for the freshness badge).
+  const syncedAt = getSyncedAt();
 
   return (
     <html lang="en" className="dark">
