@@ -253,13 +253,31 @@ async function main() {
         // Active items' on-cast self-buffs (ConditionallyApplied stats that map to our model,
         // e.g. Blood Tribute +35% fire rate). Applied only when "Actives firing" is toggled on.
         if (it.is_active_item) {
+            // Active self-buffs arrive two ways: a ConditionallyApplied stat with a
+            // provided_property_type (Blood Tribute: BonusFireRate), or an "Active*"-prefixed
+            // property with neither, whose stat we infer from the name (Vampiric Burst:
+            // ActiveBonusFireRate). Both apply only while "Actives firing" is on.
+            const statFromName = (k: string): string | null =>
+                /FireRate/i.test(k) ? "weaponFireRate"
+                : /(WeaponPower|WeaponDamage|BaseAttack)/i.test(k) ? "bulletDamage"
+                : /SprintSpeed/i.test(k) ? "sprintSpeed"
+                : /MoveSpeed/i.test(k) ? "moveSpeed"
+                : /(BulletResist|BulletArmor)/i.test(k) ? "bulletResist"
+                : /(SpiritResist|TechResist)/i.test(k) ? "spiritResist"
+                : /(SpiritPower|TechPower)/i.test(k) ? "spiritPower"
+                : /Health/i.test(k) ? "maxHealth"
+                : null;
             for (const [k, raw] of Object.entries(it.properties || {})) {
                 const pr = raw as { usage_flags?: string[]; provided_property_type?: string; value?: unknown };
-                if (!pr?.usage_flags?.includes("ConditionallyApplied")) continue;
-                const map = pr.provided_property_type ? MOD_MAP[pr.provided_property_type] : undefined;
-                const v = Number(pr.value);
-                if (!map || !v) continue;
-                eff.push({ kind: "activeBuff", value: v, stat: map[0], itemName: `${display}:${k}` });
+                const v = Number(pr?.value);
+                if (!v) continue;
+                let stat: string | null = null;
+                if (pr?.usage_flags?.includes("ConditionallyApplied") && pr.provided_property_type) {
+                    stat = MOD_MAP[pr.provided_property_type]?.[0] ?? null;
+                } else if (/^Active[A-Z]/.test(k)) {
+                    stat = statFromName(k);
+                }
+                if (stat) eff.push({ kind: "activeBuff", value: v, stat, itemName: `${display}:${k}` });
             }
         }
         // Resolve this item's direct components (cheaper parts it's built from) to display names.
@@ -380,9 +398,26 @@ async function main() {
             const ab = byClass[h.items?.[slot]];
             if (!ab) continue;
             const p = ab.properties || {};
-            // Direct/impact hit (Damage or ImpactDamage); DoT abilities use DPS over a duration
-            const direct = p.Damage ?? p.ImpactDamage;
-            const dps = p.DPS;
+            // Damage is detected by css_class (tech_damage = spirit, bullet_damage = weapon),
+            // not by property NAME — abilities scatter damage across dozens of fields
+            // (TurretDPS, DamagePerRocket, BonusDamage, ImpactDamage, …). A flat damage value
+            // has a damage css_class, a positive number, no "%" postfix (that marks an amp),
+            // and isn't a modifier/threshold/buff by name.
+            const NON_DAMAGE = /Amp|Percent|Pct|Threshold|Penalty|Resist|Reduction|Vulnerab|Multiplier|Debuff|Deferred|Outgoing|Incoming|WeaponDamage|DamageBonus|HeadshotBonus|Bonus(Health|FireRate|MoveSpeed|Bullet)/i;
+            const isDmgProp = (pr: { css_class?: string; postfix?: string; value?: unknown } | undefined) => {
+                if (!/tech_damage|bullet_damage|^damage$/.test(pr?.css_class || "")) return false;
+                if (String(pr?.postfix || "").includes("%")) return false;
+                return parseFloat(String(pr?.value)) > 0;
+            };
+            const dmgKeys = Object.keys(p).filter((k) => isDmgProp(p[k]) && !NON_DAMAGE.test(k));
+            const pick = (keys: string[], prefer: string[]) => {
+                for (const name of prefer) if (keys.includes(name)) return p[name];
+                const best = keys.slice().sort((a, b) => parseFloat(p[b].value) - parseFloat(p[a].value))[0];
+                return best ? p[best] : undefined;
+            };
+            // Per-second damage (DoT/turret) vs an instant direct hit.
+            const dps = pick(dmgKeys.filter((k) => /(DPS|PerSecond)$/i.test(k)), ["DPS", "TurretDPS", "PulseDPS"]);
+            const direct = pick(dmgKeys.filter((k) => !/(DPS|PerSecond)$/i.test(k)), ["Damage", "ImpactDamage", "BonusDamage"]);
             const mainKey = direct ?? dps;
             const isTech = mainKey?.css_class === "tech_damage";
             const scale = num(mainKey?.scale_function?.value) ?? num(mainKey?.scale_function?.stat_scale) ?? 0;
@@ -414,7 +449,8 @@ async function main() {
             const duration = firstPos(p.AbilityDuration, p.AbilityChannelTime);
             const chargesRaw = pnum(p.AbilityCharges); // "0"/-1 = no charges
             const charges = chargesRaw != null && chargesRaw > 1 ? Math.round(chargesRaw) : null;
-            const chargeCooldown = charges != null ? firstPos(p.AbilityCooldownBetweenCharge) : null;
+            // The delay before a spent charge starts refilling. Capture whenever present.
+            const chargeCooldown = firstPos(p.AbilityCooldownBetweenCharge);
 
             // Scaling metadata for the UI. The damage coefficient is stored in the
             // dedicated `spiritScaling` column; the `properties` blob only carries the

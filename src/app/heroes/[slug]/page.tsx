@@ -126,12 +126,15 @@ export default async function HeroDetailPage({
         ) : (
           <div className="space-y-px overflow-hidden rounded-lg border border-border bg-border">
             {hero.abilities.map((a) => {
+              // An ability can have both an impact hit and a damage-over-second zone
+              // (e.g. Storm Cloud) — show both rather than hiding the DoT.
               const damage =
-                (a.baseDamage ?? 0) > 0
-                  ? fmt(a.baseDamage!)
-                  : (a.dotDps ?? 0) > 0
-                    ? `${fmt(a.dotDps!)}/s`
-                    : null;
+                [
+                  (a.baseDamage ?? 0) > 0 ? fmt(a.baseDamage!) : null,
+                  (a.dotDps ?? 0) > 0 ? `${fmt(a.dotDps!)}/s` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" + ") || null;
               const { damageScalePerSpirit, scalesWithSpirit } = deriveAbilityScaling(a);
               const abilityStats = [
                 a.cooldown ? { label: "Cooldown", value: `${fmt(a.cooldown)}s` } : null,
