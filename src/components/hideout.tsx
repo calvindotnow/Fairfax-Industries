@@ -92,6 +92,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     const [shots, setShots] = useState(initialBuild?.shots ?? 8);
     const [headshots, setHeadshots] = useState(initialBuild?.headshots ?? 0);
     const [accuracy, setAccuracy] = useState(100); // % of shots that land — scales sustained DPS
+    const [headshotPct, setHeadshotPct] = useState(0); // % of landed shots that hit the head (sustained)
     // Combat-scenario toggles — feed conditional item effects (Burst Fire, resist debuffs, actives).
     const [hittingEnemy, setHittingEnemy] = useState(true);
     const [resistDebuffs, setResistDebuffs] = useState(true);
@@ -218,14 +219,14 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
     const targetEquipped = useMemo(() => targetLoadout.map((id) => items.find((i) => i.id === id)!).filter(Boolean), [targetLoadout, items]);
 
     // Both builds run against the same hero, target, and scenario.
-    const sharedSim = { hero, target, targetEquipped, matchTargetLevel, range, shots, headshots, accuracy, disabledAbilities, hittingEnemy, resistDebuffs, activesFiring, stacksByItem };
+    const sharedSim = { hero, target, targetEquipped, matchTargetLevel, range, shots, headshots, accuracy, headshotPct, disabledAbilities, hittingEnemy, resistDebuffs, activesFiring, stacksByItem };
     const simAttacker = (atkItems: ItemWithModifiers[]) =>
         !hero || !target
             ? null
             : simulate(
                   { hero, items: atkItems },
                   { hero: target, items: targetEquipped, matchAttackerLevel: matchTargetLevel },
-                  { range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring, stacksByItem, accuracy }
+                  { range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring, stacksByItem, accuracy, headshotPct }
               );
     /* eslint-disable react-hooks/exhaustive-deps */
     const resultA = useMemo(() => simAttacker(equippedA), [equippedA, sharedSim]);
@@ -562,12 +563,22 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                 {/* Damage calculator */}
                 <div data-tour="damage" style={{ padding: 18, borderLeft: narrow ? "none" : "1px solid var(--border)", borderTop: narrow ? "1px solid var(--border)" : "none" }}>
                     <SectionHead title="Damage" />
+                    {(() => { const RMAX = 50; const pct = (m: number) => `${Math.min(100, (m / RMAX) * 100)}%`; return (
                     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
                         <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)", whiteSpace: "nowrap" }}>Range</span>
-                        <input type="range" min={0} max={80} step={1} value={range} onChange={(e) => setRange(Number(e.target.value))}
-                            style={{ flex: 1, accentColor: "var(--brass-500)" }} />
-                        <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 14, color: "var(--text)", width: 44, textAlign: "right" }}>{range} m</span>
+                        {/* Slider with the attacker's damage-falloff band marked (amber = falloff starts, red = max falloff). */}
+                        <div style={{ position: "relative", flex: 1, display: "flex", alignItems: "center" }}>
+                            {hero.falloffStart < RMAX && <span title={`Damage falloff starts at ${hero.falloffStart} m`} style={{ position: "absolute", left: pct(hero.falloffStart), top: -3, bottom: -3, width: 2, background: "var(--brass-500)", opacity: 0.7, pointerEvents: "none" }} />}
+                            {hero.falloffEnd < RMAX && <span title={`Max falloff at ${hero.falloffEnd} m`} style={{ position: "absolute", left: pct(hero.falloffEnd), top: -3, bottom: -3, width: 2, background: "var(--danger-500)", opacity: 0.6, pointerEvents: "none" }} />}
+                            <input type="range" min={0} max={RMAX} step={1} value={Math.min(range, RMAX)} onChange={(e) => setRange(Number(e.target.value))}
+                                style={{ flex: 1, accentColor: "var(--brass-500)" }} />
+                        </div>
+                        <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.1, minWidth: 64 }}>
+                            <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 14, color: "var(--text)" }}>{range} m</span>
+                            <span title="This attacker's damage falloff band" style={{ fontSize: 9.5, color: "var(--text-dim)", fontFamily: "var(--font-numeric)", whiteSpace: "nowrap" }}>falloff {hero.falloffStart}–{hero.falloffEnd}m</span>
+                        </span>
                     </div>
+                    ); })()}
                     {/* Combat scenario — toggles that drive conditional item effects (one place). */}
                     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 7, marginBottom: 16 }}>
                         <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--text-dim)", marginRight: 2 }}>Scenario</span>
@@ -592,15 +603,26 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                             ))}
                         </div>
                     )}
-                    {/* Accuracy sits next to the sustained number it scales. */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
-                            <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)" }}>Accuracy</span>
-                            <InfoDot tip="Share of shots that land. Scales sustained DPS and time-to-kill — over a real fight, misses don't damage. Burst assumes your combo lands." />
-                        </span>
-                        <input type="range" min={0} max={100} step={1} value={accuracy} onChange={(e) => setAccuracy(Number(e.target.value))} aria-label="Accuracy percent"
-                            style={{ flex: 1, accentColor: "var(--brass-500)" }} />
-                        <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 14, color: "var(--text)", width: 44, textAlign: "right" }}>{accuracy}%</span>
+                    {/* Accuracy + headshot rate sit next to the sustained number they scale. */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 12, flexWrap: "wrap" }}>
+                        <div style={{ flex: 1, minWidth: 150, display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+                                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-dim)" }}>Accuracy</span>
+                                <InfoDot tip="Share of shots that land. Scales sustained DPS and time-to-kill — over a real fight, misses don't damage. Burst assumes your combo lands." />
+                            </span>
+                            <input type="range" min={0} max={100} step={1} value={accuracy} onChange={(e) => setAccuracy(Number(e.target.value))} aria-label="Accuracy percent"
+                                style={{ flex: 1, accentColor: "var(--brass-500)" }} />
+                            <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 13, color: "var(--text)", width: 38, textAlign: "right" }}>{accuracy}%</span>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 150, display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+                                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-dim)" }}>Headshot</span>
+                                <InfoDot tip="Share of your landed shots that hit the head over a sustained fight — adds the 1.65× crit bonus to sustained DPS. (The Headshots field below is the exact count for the burst combo.)" />
+                            </span>
+                            <input type="range" min={0} max={100} step={1} value={headshotPct} onChange={(e) => setHeadshotPct(Number(e.target.value))} aria-label="Headshot percent"
+                                style={{ flex: 1, accentColor: "var(--brass-500)" }} />
+                            <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 13, color: "var(--text)", width: 38, textAlign: "right" }}>{headshotPct}%</span>
+                        </div>
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--border)" }}>
                         <StatReadout label="Sustained DPS" value={fmt(result.sustainedDps)} unit="dps" accent tip={`Damage per second firing continuously at this range (fire rate × damage per shot, after the target's resists)${result.procDps > 0 ? `, including ${fmt(result.procDps)} from on-hit procs` : ""}${accuracy < 100 ? `, scaled by ${accuracy}% accuracy` : ""}.`} />

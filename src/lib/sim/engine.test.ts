@@ -12,7 +12,7 @@ const item = (name: string) => items.find((i) => i.name === name)!;
 const byCategoryDesc = (cat: string) =>
     items.filter((i) => i.category === cat).sort((a, b) => b.soulCost - a.soulCost);
 
-const opts = (over: Partial<{ range: number; shots: number; headshots: number; disabledAbilityIds: number[]; hittingEnemy: boolean; resistDebuffs: boolean; activesFiring: boolean; stacksByItem: Record<number, number>; accuracy: number }> = {}) => ({
+const opts = (over: Partial<{ range: number; shots: number; headshots: number; disabledAbilityIds: number[]; hittingEnemy: boolean; resistDebuffs: boolean; activesFiring: boolean; stacksByItem: Record<number, number>; accuracy: number; headshotPct: number }> = {}) => ({
     range: 15,
     shots: 8,
     headshots: 0,
@@ -148,6 +148,12 @@ describe("combat-scenario conditionals", () => {
         const half = simulate({ hero: hero("Haze"), items: [] }, { hero: hero("Abrams") }, opts({ accuracy: 50 }));
         expect(half.sustainedDps).toBeCloseTo(full.sustainedDps * 0.5);
         expect(half.burst.total).toBeCloseTo(full.burst.total);
+    });
+
+    test("headshot rate raises sustained DPS (the 1.65x crit on a fraction of shots)", () => {
+        const none = simulate({ hero: hero("Vindicta"), items: [] }, { hero: hero("Abrams") }, opts({ headshotPct: 0 }));
+        const some = simulate({ hero: hero("Vindicta"), items: [] }, { hero: hero("Abrams") }, opts({ headshotPct: 100 }));
+        expect(some.sustainedDps).toBeCloseTo(none.sustainedDps * 1.65, 0);
     });
 
     test("melee scales with melee-damage items and is cut by the target's melee resist", () => {

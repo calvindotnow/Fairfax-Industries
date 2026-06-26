@@ -152,6 +152,7 @@ export interface SimOptions {
     // Per-item assumed stack count (item id → stacks). Unset = fully stacked (the item's max).
     stacksByItem?: Record<number, number>;
     accuracy?: number; // 0–100; fraction of shots that land. Scales sustained DPS. Default 100.
+    headshotPct?: number; // 0–100; fraction of landed shots that hit the head (sustained DPS). Default 0.
 }
 
 export interface AbilityRow {

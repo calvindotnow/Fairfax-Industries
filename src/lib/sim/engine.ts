@@ -485,10 +485,18 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
         const rate = c <= 0 ? fireRate : Math.min(1 / c, fireRate || 1 / c);
         procDps += per * rate;
     }
+    // Sustained-fight headshots: a fraction of landed shots hit the head, adding the base
+    // 1.65× crit bonus (+ flat headshot items), scaled by the target's crit resistance.
+    const hsFrac = Math.max(0, Math.min(100, opts.headshotPct ?? 0)) / 100;
+    const flatHeadshot = effects
+        .filter((e) => e.condition === "headshot" && e.damageType === "weapon")
+        .reduce((s, e) => s + e.value, 0);
+    const critScale = target.hero.critDamageReceivedScale ?? 1;
+    const hsBonusPerShot = (damagePerShot * (HEADSHOT_MULT - 1) + flatHeadshot * combat.falloffMultiplier * bulletResFactor) * critScale;
     // Accuracy scales sustained output — over a long fight, misses don't damage or proc.
     // (Burst is left as the ideal combo window; accuracy is a sustained-fight concept.)
     const accuracy = Math.max(0, Math.min(100, opts.accuracy ?? 100)) / 100;
-    const sustainedDps = (combat.dps * cwm + procDps) * accuracy;
+    const sustainedDps = (combat.dps * cwm + procDps + hsFrac * hsBonusPerShot * fireRate) * accuracy;
 
     // Melee damage: base × per-level growth (heavy grows at light's fractional rate —
     // validated vs known values, e.g. Bebop heavy +2.91/boon = 1.58 × 116/63), then
