@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
-import { simulate, levelFromSouls, parseEffects, type SimResult } from "@/lib/sim";
+import { simulate, levelFromSouls, parseEffects, deriveAbilityScaling, type SimResult } from "@/lib/sim";
 import { encodeBuild, type ShareState } from "@/lib/build-code";
 import { useIsNarrow } from "@/lib/use-narrow";
 import BuyMenu from "@/components/buy-menu";
@@ -262,6 +262,14 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
         }
         return m;
     }, [imbueItems, imbueAssign]);
+
+    // Attacker's execute / assassinate abilities (HP-% thresholds) for the enemy-health marker.
+    const executes = useMemo(
+        () => (hero?.abilities ?? [])
+            .map((a) => { const s = deriveAbilityScaling(a); return s.executePct ? { name: a.name, pct: s.executePct, kind: s.executeKind ?? "bonus" } : null; })
+            .filter((x): x is { name: string; pct: number; kind: "kill" | "bonus" } => x != null),
+        [hero]
+    );
 
     // Build progression (FR-1): preview the active build at a purchase checkpoint —
     // the partial loadout you'd own by step N — without touching the live calculator.
@@ -672,6 +680,10 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                             <StatReadout label="Light" value={fmt(result.melee.light)} />
                             <StatReadout label="Heavy" value={fmt(result.melee.heavy)} />
                         </div>
+                    )}
+
+                    {executes.length > 0 && (
+                        <ExecutePanel executes={executes} targetMaxHp={ts.maxHealth} burst={b.total} targetName={target.name} fmt={fmt} />
                     )}
 
                     {/* How this is calculated — scope + accuracy disclosure (3.1) */}
@@ -1128,6 +1140,54 @@ function HeroSelect({ heroes, value, onChange, accentColor, align = "left" }: { 
                 style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontFamily: "var(--font-archivo)", fontSize: 13, color: "var(--text)", textAlign: align === "right" ? "right" : "left", cursor: "pointer" }}>
                 {heroes.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
             </select>
+        </div>
+    );
+}
+
+// Execute / assassinate window — an enemy HP bar with the threshold line(s) marked and a
+// readout of whether your burst (from full health) brings the target below the line.
+function ExecutePanel({ executes, targetMaxHp, burst, targetName, fmt }: {
+    executes: { name: string; pct: number; kind: "kill" | "bonus" }[];
+    targetMaxHp: number; burst: number; targetName: string; fmt: (n: number) => string;
+}) {
+    const remaining = Math.max(0, targetMaxHp - burst);
+    const remainingPct = targetMaxHp > 0 ? (remaining / targetMaxHp) * 100 : 100;
+    const removedPct = Math.min(100, 100 - remainingPct);
+    const colorFor = (kind: "kill" | "bonus") => (kind === "kill" ? "var(--danger-500)" : "var(--brass-400)");
+    return (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginBottom: 10 }}>
+                <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--danger-500)" }}>Execute window</span>
+                <InfoDot tip="Where your burst leaves the target's health, against the ability's threshold. Kill = instakills below the line; bonus = bonus damage below it. Burst is your combo from full HP." />
+            </span>
+            {/* HP bar: green = health left after your burst, red = the chunk your burst removes. */}
+            <div style={{ position: "relative", height: 18, borderRadius: "var(--r-pill)", background: "var(--ink-700)", overflow: "hidden", marginBottom: 8 }}>
+                <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${remainingPct}%`, background: "var(--vitality-500)", opacity: 0.85 }} />
+                <div style={{ position: "absolute", left: `${remainingPct}%`, top: 0, bottom: 0, width: `${removedPct}%`, background: "repeating-linear-gradient(135deg, color-mix(in srgb, var(--danger-500) 45%, transparent) 0 5px, transparent 5px 10px)" }} />
+                {executes.map((e, i) => (
+                    <span key={i} title={`${e.name} — ${e.kind === "kill" ? "executes" : "bonus"} below ${e.pct}% HP`}
+                        style={{ position: "absolute", left: `${e.pct}%`, top: -2, bottom: -2, width: 2, background: colorFor(e.kind), boxShadow: `0 0 5px ${colorFor(e.kind)}` }} />
+                ))}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {executes.map((e, i) => {
+                    const crossed = remainingPct <= e.pct;
+                    const need = Math.max(0, remaining - (targetMaxHp * e.pct) / 100);
+                    return (
+                        <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: colorFor(e.kind), flexShrink: 0, alignSelf: "center" }} />
+                            <span style={{ color: "var(--text)", fontWeight: 600 }}>{e.name}</span>
+                            <span style={{ color: "var(--text-dim)" }}>{e.kind === "kill" ? "execute" : "assassinate"} &lt; {e.pct}%</span>
+                            <span style={{ marginLeft: "auto", fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", color: crossed ? "var(--cash-500)" : "var(--text-muted)" }}>
+                                {crossed ? (e.kind === "kill" ? "✓ kill secured" : "✓ window reached") : `${fmt(Math.ceil(need))} more HP`}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+            <p style={{ marginTop: 8, fontSize: 11, color: "var(--text-dim)" }}>
+                From full health, your {fmt(Math.round(burst))} burst leaves {targetName} at <strong style={{ color: "var(--text-muted)" }}>{Math.round(remainingPct)}%</strong> HP.
+            </p>
         </div>
     );
 }

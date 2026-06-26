@@ -465,9 +465,25 @@ async function main() {
             };
             const rangeScalesWithSpirit = range != null && /ETechRange/.test(scaleTypeOf(p.AbilityCastRange) + scaleTypeOf(p.Radius));
             const durationScalesWithSpirit = duration != null && /ETechDuration/.test(scaleTypeOf(p.AbilityDuration) + scaleTypeOf(p.AbilityChannelTime));
-            const scalingJson = rangeScalesWithSpirit || durationScalesWithSpirit
-                ? JSON.stringify({ rangeScalesWithSpirit, durationScalesWithSpirit })
-                : null;
+
+            // Execute / assassinate thresholds (HP %), for the enemy-health-bar marker.
+            //  • "kill"  — instakills below the line (Venator ExecuteThreshold, Shiv Killing Blow).
+            //  • "bonus" — bonus damage below the line (Vindicta/Drifter/Talon low-health).
+            const killNamed = /execut|killing blow|finish|cull/i.test(`${ab.name} ${ab.description?.desc ?? ""}`);
+            const execThresh = pnum(p.ExecuteThreshold);
+            const enemyHpThresh = pnum(p.EnemyHealthPercent);
+            const lowThresh = pnum(p.LowHealthEnemyThresholdPct) ?? pnum(p.LowHealthThreshold) ?? pnum(p.LowHealthFraction);
+            let executePct: number | null = null;
+            let executeKind: "kill" | "bonus" | null = null;
+            if (execThresh && execThresh > 0) { executePct = execThresh; executeKind = "kill"; }
+            else if (enemyHpThresh && enemyHpThresh > 0 && killNamed) { executePct = enemyHpThresh; executeKind = "kill"; }
+            else if (lowThresh && lowThresh > 0) { executePct = lowThresh; executeKind = "bonus"; }
+
+            const meta: Record<string, unknown> = {};
+            if (rangeScalesWithSpirit) meta.rangeScalesWithSpirit = true;
+            if (durationScalesWithSpirit) meta.durationScalesWithSpirit = true;
+            if (executePct != null) { meta.executePct = executePct; meta.executeKind = executeKind; }
+            const scalingJson = Object.keys(meta).length ? JSON.stringify(meta) : null;
 
             db.insert(abilities)
                 .values({

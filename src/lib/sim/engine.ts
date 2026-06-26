@@ -216,6 +216,8 @@ export function deriveAbilityScaling(
         rangeScalesWithSpirit,
         durationScalesWithSpirit,
         scalesWithSpirit: damageScalePerSpirit > 0 || rangeScalesWithSpirit || durationScalesWithSpirit,
+        executePct: flags.executePct,
+        executeKind: flags.executeKind,
     };
 }
 

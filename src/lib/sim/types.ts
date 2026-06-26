@@ -65,6 +65,9 @@ export interface AbilityData {
 export interface AbilityScaling {
     rangeScalesWithSpirit?: boolean;
     durationScalesWithSpirit?: boolean;
+    // Execute / assassinate HP-% threshold for the enemy-health-bar marker.
+    executePct?: number;
+    executeKind?: "kill" | "bonus";
 }
 
 /** Resolved scaling for an ability: the damage coefficient plus the dimensions
@@ -74,6 +77,8 @@ export interface AbilityScalingInfo {
     rangeScalesWithSpirit: boolean;
     durationScalesWithSpirit: boolean;
     scalesWithSpirit: boolean;
+    executePct?: number;
+    executeKind?: "kill" | "bonus";
 }
 
 export interface HeroData {
