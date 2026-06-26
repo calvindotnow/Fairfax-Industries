@@ -10,6 +10,7 @@ import { encodeBuild, type ShareState } from "@/lib/build-code";
 import { defaultShotsForFireRate, secondsOfFire } from "@/lib/hideout-utils";
 import { useIsNarrow } from "@/lib/use-narrow";
 import BuyMenu from "@/components/buy-menu";
+import { HeroPicker } from "@/components/hero-picker";
 import OnboardingTour, { type TourStep } from "@/components/onboarding-tour";
 import RollingNumber from "@/components/rolling-number";
 import SlotText from "@/components/slot-text";
@@ -409,7 +410,11 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                 <div style={{ display: "grid", gridTemplateColumns: narrow ? "1fr" : "1fr auto 1fr", gap: narrow ? 14 : 20, alignItems: "stretch", padding: narrow ? 14 : 18 }}>
                     {/* Attacker */}
                     <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: narrow ? "wrap" : "nowrap" }}>
-                        <HeroPortrait imageUrl={hero.imageUrl} size={64} level={result.level} />
+                        <HeroPicker heroes={heroes} value={heroId} onChange={setHeroId} accentColor="var(--brass-400)">
+                          <button type="button" title="Change hero" aria-label="Change attacker hero" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", borderRadius: 8 }}>
+                            <HeroPortrait imageUrl={hero.imageUrl} size={64} level={result.level} />
+                          </button>
+                        </HeroPicker>
                         <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 4, minWidth: 0, flex: 1, alignItems: "flex-start", textAlign: "left" }}>
                             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                                 <SideLabel color="var(--brass-400)">Attacker</SideLabel>
@@ -431,9 +436,6 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                                 <MiniStat label="Sprint" value={hs.sprintSpeed.toFixed(1)} color="var(--text-muted)" align="left" tip={`Sprinting at ${hs.sprintSpeed.toFixed(1)} m/s · base move speed ${hs.moveSpeed.toFixed(1)} m/s`} />
                                 <MiniStat label="Stamina" value={fmt(hs.stamina)} color="var(--text-muted)" align="left" tip="Stamina charges — spent on dashes and air-jumps. (Regen time isn't in the current data feed.)" />
                             </div>
-                            <div style={{ marginTop: 4, width: 200, maxWidth: "100%" }}>
-                                <HeroSelect heroes={heroes} value={heroId} onChange={setHeroId} accentColor="var(--brass-400)" />
-                            </div>
                         </div>
                         <CompactLoadout equipped={equipped} onRemove={removeItem} soulsSpent={result.soulsSpent} fmt={fmt} accent="var(--brass-400)" />
                     </div>
@@ -448,7 +450,11 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                     {/* Target */}
                     <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexDirection: narrow ? "row" : "row-reverse", flexWrap: narrow ? "wrap" : "nowrap" }}>
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 9, flexShrink: 0 }}>
-                            <HeroPortrait imageUrl={target.imageUrl} size={64} level={result.targetLevel} />
+                            <HeroPicker heroes={heroes} value={targetId} onChange={setTargetId} accentColor="var(--danger-500)" align="right">
+                              <button type="button" title="Change hero" aria-label="Change target hero" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", borderRadius: 8 }}>
+                                <HeroPortrait imageUrl={target.imageUrl} size={64} level={result.targetLevel} />
+                              </button>
+                            </HeroPicker>
                             <MatchLevelButton active={matchTargetLevel} attackerLevel={result.level} onClick={() => setMatchTargetLevel((v) => !v)} />
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 4, minWidth: 0, flex: 1, alignItems: "flex-end", textAlign: "right" }}>
@@ -461,9 +467,6 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                                 {critReductionPct(target.critDamageReceivedScale) !== 0 && (() => { const v = critReductionPct(target.critDamageReceivedScale); return (
                                     <MiniStat label="Headshot" value={`${v >= 0 ? "−" : "+"}${Math.abs(v)}%`} color="var(--brass-300)" align="right" tip={`Takes ${Math.abs(v)}% ${v >= 0 ? "less" : "more"} headshot (crit) damage`} />
                                 ); })()}
-                            </div>
-                            <div style={{ marginTop: 4, width: 200, maxWidth: "100%" }}>
-                                <HeroSelect heroes={heroes} value={targetId} onChange={setTargetId} accentColor="var(--danger-500)" align="right" />
                             </div>
                         </div>
                         <CompactLoadout equipped={targetEquipped} onRemove={removeTargetItem} soulsSpent={result.targetSoulsSpent} fmt={fmt} accent="var(--danger-500)" emptyHint />
@@ -1204,18 +1207,6 @@ function HeroPortrait({ imageUrl, size, level }: { imageUrl?: string | null; siz
                     {level}
                 </span>
             )}
-        </div>
-    );
-}
-
-function HeroSelect({ heroes, value, onChange, accentColor, align = "left" }: { heroes: HeroWithAbilities[]; value: number | null; onChange: (id: number) => void; accentColor: string; align?: "left" | "right" }) {
-    return (
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 30, padding: "0 10px", background: "var(--surface-raised)", border: "1px solid var(--border-strong)", borderRadius: "var(--r-sm)", width: "100%" }}>
-            <span style={{ color: accentColor, fontSize: 8 }}>◆</span>
-            <select value={value ?? ""} onChange={(e) => onChange(Number(e.target.value))}
-                style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontFamily: "var(--font-archivo)", fontSize: 13, color: "var(--text)", textAlign: align === "right" ? "right" : "left", cursor: "pointer" }}>
-                {heroes.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
-            </select>
         </div>
     );
 }
