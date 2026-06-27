@@ -6,6 +6,8 @@ import { defaultShotsForFireRate } from "@/lib/hideout-utils";
 
 const MAX_LOADOUT = 12; // Deadlock caps a build at 12 active items.
 
+export type Build = ReturnType<typeof useBuild>;
+
 export function useBuild({
     heroes,
     items,
