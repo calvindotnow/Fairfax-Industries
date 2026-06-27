@@ -1,4 +1,4 @@
-import Hideout from "@/components/hideout";
+import DamageCalculator from "@/components/damage-calculator";
 import { decodeBuild } from "@/lib/build-code";
 import { getHeroes, getItems } from "@/lib/data";
 
@@ -24,5 +24,5 @@ export default async function HideoutPage({
             ? Number(heroParam)
             : null;
 
-    return <Hideout heroes={heroes} items={items} initialHeroId={initialHeroId} initialBuild={initialBuild} />;
+    return <DamageCalculator heroes={heroes} items={items} initialHeroId={initialHeroId} initialBuild={initialBuild} />;
 }

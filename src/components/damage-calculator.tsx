@@ -11,8 +11,6 @@ import { secondsOfFire } from "@/lib/hideout-utils";
 import { useIsNarrow } from "@/lib/use-narrow";
 import { useBuild } from "@/lib/use-build";
 import BuyMenu from "@/components/buy-menu";
-import dynamic from "next/dynamic";
-const CounterPanel = dynamic(() => import("@/components/counter-panel").then((m) => ({ default: m.CounterPanel })), { ssr: false });
 import OnboardingTour, { type TourStep } from "@/components/onboarding-tour";
 import RollingNumber from "@/components/rolling-number";
 import { VersusBand, InfoDot } from "@/components/versus-band";
@@ -76,7 +74,7 @@ const TOUR_STEPS: TourStep[] = [
 ];
 
 
-export default function Hideout({ heroes, items, initialHeroId = null, initialBuild = null }: HideoutProps) {
+export default function DamageCalculator({ heroes, items, initialHeroId = null, initialBuild = null }: HideoutProps) {
     const narrow = useIsNarrow();
     const searchParams = useSearchParams();
     const build = useBuild({ heroes, items, initialHeroId, initialBuild });
@@ -118,7 +116,6 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
         damageActives,
         imbueItems,
         imbuedBy,
-        counterOpts,
         executes,
         equippedMeleeResist,
         cp,
@@ -136,7 +133,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
         toast,
     } = build;
     const [showCalc, setShowCalc] = useState(false);
-    const [overviewTab, setOverviewTab] = useState<"damage" | "vitality" | "spirit" | "counter">("damage");
+    const [overviewTab, setOverviewTab] = useState<"damage" | "vitality" | "spirit">("damage");
     const [showProgression, setShowProgression] = useState(true);
     const [showOnboard, setShowOnboard] = useState(false);
     // True while the tour is showing a demo build we injected (so the shop,
@@ -339,19 +336,6 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                     <OverviewTabs active={overviewTab} onChange={setOverviewTab} />
                     {overviewTab === "vitality" && <VitalityPanel hs={hs} hero={hero} meleeResist={equippedMeleeResist} critReductionPct={critReductionPct} fmt={fmt} />}
                     {overviewTab === "spirit" && <SpiritPanel hs={hs} abilities={result.abilities} itemDamage={result.spiritItemDamage} fmt={fmt} />}
-                    {/* v1 lane-ready seam: single target passed here; v1.x will map this over an enemies array */}
-                    {overviewTab === "counter" && hero && target && (
-                        <CounterPanel
-                            hero={hero}
-                            enemy={target}
-                            yourItems={equipped}
-                            enemyItems={targetEquipped}
-                            opts={counterOpts}
-                            items={items}
-                            onAddItem={(id) => (activeBuild === "B" ? setLoadoutB : setLoadoutA)((l) => l.length < MAX_LOADOUT && !l.includes(id) ? [...l, id] : l)}
-                            fmt={fmt}
-                        />
-                    )}
                     {overviewTab === "damage" && (<>
                     {(() => { const RMAX = 50; const pct = (m: number) => `${Math.min(100, (m / RMAX) * 100)}%`; return (
                     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
@@ -672,12 +656,11 @@ function MiniButton({ onClick, label, title }: { onClick: () => void; label: str
     );
 }
 
-function OverviewTabs({ active, onChange }: { active: "damage" | "vitality" | "spirit" | "counter"; onChange: (t: "damage" | "vitality" | "spirit" | "counter") => void }) {
+function OverviewTabs({ active, onChange }: { active: "damage" | "vitality" | "spirit"; onChange: (t: "damage" | "vitality" | "spirit") => void }) {
     const tabs = [
         ["damage", "Damage", "var(--brass-300)"],
         ["vitality", "Vitality", "var(--vitality-400)"],
         ["spirit", "Spirit", "var(--spirit-400)"],
-        ["counter", "Counter", "var(--danger-500)"],
     ] as const;
     const { containerRef, setRef, box } = useTabIndicator(active);
     const activeColor = tabs.find(([k]) => k === active)?.[2] ?? "var(--brass-300)";
