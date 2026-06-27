@@ -283,7 +283,7 @@ export function CounterPanel({
                 fontSize: 11, color: "var(--text-dim)", lineHeight: 1.55,
             }}>
                 Matchup and counter-item winrates from Deadlock match data (same-lane filter, min 100 matches).
-                Sim deltas compare your build + each candidate against the current enemy build — not a causal winrate projection.
+                Sim deltas compare your build + each candidate — its stats plus the level gain from its soul cost — against the current enemy build; not a causal winrate projection.
                 Net lift (▲▲/▲/·) = two-sided duel-advantage shift via the Fairfax engine.
             </div>
 
