@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { useIsNarrow } from "@/lib/use-narrow";
 
 const navItems = [
-    { href: "/hideout", label: "New Build" },
+    { href: "/hideout", label: "Damage Calc" },
+    { href: "/lane", label: "Lane Matchup" },
     { href: "/heroes", label: "Heroes" },
     { href: "/items", label: "Items" },
 ];

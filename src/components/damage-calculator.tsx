@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
 import { type SimResult } from "@/lib/sim";
-import type { ShareState } from "@/lib/build-code";
+import { encodeBuild, type ShareState } from "@/lib/build-code";
 import { secondsOfFire } from "@/lib/hideout-utils";
 import { useIsNarrow } from "@/lib/use-narrow";
 import { useBuild } from "@/lib/use-build";
@@ -104,6 +104,7 @@ export default function DamageCalculator({ heroes, items, initialHeroId = null, 
         checkpoint, setCheckpoint,
         disabledAbilities,
         loadout,
+        targetLoadout,
         hero,
         target,
         targetEquipped,
@@ -199,6 +200,8 @@ export default function DamageCalculator({ heroes, items, initialHeroId = null, 
         return <p style={{ color: "var(--text-muted)" }}>No hero data available.</p>;
     }
 
+    const laneHref = `/lane?b=${encodeBuild({ heroId, targetId, loadout, targetLoadout, range, shots, headshots, matchTargetLevel }, heroes, items)}`;
+
     const hs = result.heroStats;
     const b = result.burst;
     const fmt = (n: number) => Math.round(n).toLocaleString();
@@ -210,6 +213,11 @@ export default function DamageCalculator({ heroes, items, initialHeroId = null, 
             {showOnboard && <OnboardingTour steps={TOUR_STEPS} onDismiss={dismissOnboard} />}
             {/* VersusBand */}
             <VersusBand build={build} narrow={narrow} fmt={fmt} heroes={heroes} />
+
+            {/* Transfer link — open current build in the Lane Matchup surface */}
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <Link href={laneHref} style={{ fontSize: 12.5, color: "var(--text-muted)", textDecoration: "none", fontWeight: 500 }}>Open in Lane Matchup →</Link>
+            </div>
 
             {/* A/B compare — expanded panel or minimized bar (never discards a build) */}
             {compareOn && resultA && resultB && (
