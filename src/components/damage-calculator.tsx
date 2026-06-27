@@ -13,25 +13,15 @@ import { useBuild } from "@/lib/use-build";
 import BuyMenu from "@/components/buy-menu";
 import OnboardingTour, { type TourStep } from "@/components/onboarding-tour";
 import RollingNumber from "@/components/rolling-number";
-import { VersusBand, InfoDot } from "@/components/versus-band";
+import { VersusBand, InfoDot, type Category, CAT_COLOR } from "@/components/versus-band";
 import { ProgressionPanel } from "@/components/progression-panel";
 
-interface HideoutProps {
+interface DamageCalculatorProps {
     heroes: HeroWithAbilities[];
     items: ItemWithModifiers[];
     initialHeroId?: number | null;
     initialBuild?: ShareState | null;
 }
-
-type Category = "weapon" | "vitality" | "spirit";
-
-const MAX_LOADOUT = 12; // Deadlock caps a build at 12 active items.
-
-const CAT_COLOR: Record<Category, string> = {
-    weapon: "var(--weapon-400)",
-    vitality: "var(--vitality-400)",
-    spirit: "var(--spirit-400)",
-};
 
 // First-run walkthrough — each step spotlights a real section by its data-tour id.
 const emph = (s: string) => <strong style={{ color: "var(--text)", fontWeight: 600 }}>{s}</strong>;
@@ -74,20 +64,19 @@ const TOUR_STEPS: TourStep[] = [
 ];
 
 
-export default function DamageCalculator({ heroes, items, initialHeroId = null, initialBuild = null }: HideoutProps) {
+export default function DamageCalculator({ heroes, items, initialHeroId = null, initialBuild = null }: DamageCalculatorProps) {
     const narrow = useIsNarrow();
     const searchParams = useSearchParams();
     const build = useBuild({ heroes, items, initialHeroId, initialBuild });
     const {
-        heroId, setHeroId,
-        targetId, setTargetId,
+        heroId,
+        targetId,
         loadoutA, setLoadoutA,
-        setLoadoutB,
         compareOn,
         compareView,
         activeBuild, setActiveBuild,
         buyingFor, setBuyingFor,
-        matchTargetLevel, setMatchTargetLevel,
+        matchTargetLevel,
         range, setRange,
         shots, setShots,
         headshots, setHeadshots,
@@ -101,14 +90,12 @@ export default function DamageCalculator({ heroes, items, initialHeroId = null, 
         imbueAssign, setImbueAssign,
         abilityRanks, setAbilityRanks,
         excludedActives, setExcludedActives,
-        checkpoint, setCheckpoint,
+        setCheckpoint,
         disabledAbilities,
         loadout,
         targetLoadout,
         hero,
         target,
-        targetEquipped,
-        equipped,
         resultA,
         resultB,
         result,
@@ -124,12 +111,9 @@ export default function DamageCalculator({ heroes, items, initialHeroId = null, 
         activeLoadout,
         activeAdd,
         activeRemove,
-        removeItem,
-        removeTargetItem,
         moveStep,
         onCompareClick,
         exitCompare,
-        buildShareUrl,
         toggleAbility,
         toast,
     } = build;

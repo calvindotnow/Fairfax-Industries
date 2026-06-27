@@ -6,20 +6,21 @@ import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
 import { HeroPicker } from "@/components/hero-picker";
 import SlotText from "@/components/slot-text";
 import type { Build } from "@/lib/use-build";
+import { MAX_LOADOUT } from "@/lib/use-build";
 
-type Category = "weapon" | "vitality" | "spirit";
-const MAX_LOADOUT = 12;
-const CAT_COLOR: Record<Category, string> = {
+export type Category = "weapon" | "vitality" | "spirit";
+export const CAT_COLOR: Record<Category, string> = {
     weapon: "var(--weapon-400)",
     vitality: "var(--vitality-400)",
     spirit: "var(--spirit-400)",
 };
 
-export function VersusBand({ build, narrow, fmt, heroes }: {
+export function VersusBand({ build, narrow, fmt, heroes, showCompare = true }: {
     build: Build;
     narrow: boolean;
     fmt: (n: number) => string;
     heroes: HeroWithAbilities[];
+    showCompare?: boolean;
 }) {
     const {
         heroId, setHeroId, setShotsTouched,
@@ -125,7 +126,7 @@ export function VersusBand({ build, narrow, fmt, heroes }: {
                     <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${result.levelProgressPct}%`, background: "linear-gradient(90deg, var(--brass-600), var(--brass-300))" }} />
                 </div>
                 <span style={{ fontSize: 12, color: "var(--text-dim)", whiteSpace: "nowrap", fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums" }}>{result.levelProgressPct}% → Lvl {result.level + 1}</span>
-                <span data-tour="compare" style={{ display: "inline-flex" }}><CompareToggle compareOn={compareOn} view={compareView} onClick={onCompareClick} /></span>
+                {showCompare && <span data-tour="compare" style={{ display: "inline-flex" }}><CompareToggle compareOn={compareOn} view={compareView} onClick={onCompareClick} /></span>}
                 <span data-tour="share" style={{ display: "inline-flex" }}><ShareBuildButton getUrl={buildShareUrl} /></span>
             </div>
         </div>

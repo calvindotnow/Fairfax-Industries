@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
-import { simulate, parseEffects, deriveAbilityScaling, sumPercentModifiers, type SimResult } from "@/lib/sim";
+import { simulate, parseEffects, deriveAbilityScaling, sumPercentModifiers } from "@/lib/sim";
 import { encodeBuild, type ShareState } from "@/lib/build-code";
 import { defaultShotsForFireRate } from "@/lib/hideout-utils";
 
-const MAX_LOADOUT = 12; // Deadlock caps a build at 12 active items.
+export const MAX_LOADOUT = 12; // Deadlock caps a build at 12 active items.
 
 export type Build = ReturnType<typeof useBuild>;
 
@@ -140,7 +140,6 @@ export function useBuild({
       const def = defaultShotsForFireRate(equippedFireRate);
       setShots(def);
       setHeadshots((h) => Math.min(h, def));
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [equippedFireRate, shotsTouched]);
     // Equipped stacking items + each one's own max (drives the per-item Stacks chips).
     // `modeled` = at least one stacking effect maps to a stat the engine applies.
@@ -184,9 +183,7 @@ export function useBuild({
         hittingEnemy, resistDebuffs, activesFiring,
         stacksByItem, accuracy, headshotPct, abilityRanks,
         excludedActiveItemIds: [...excludedActives],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [range, shots, headshots, hittingEnemy, resistDebuffs, activesFiring, accuracy, headshotPct,
-        // eslint-disable-next-line react-hooks/exhaustive-deps
         disabledAbilities, stacksByItem, abilityRanks, excludedActives]);
 
     // Attacker's execute / assassinate abilities (HP-% thresholds) for the enemy-health marker.

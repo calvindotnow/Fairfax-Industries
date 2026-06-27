@@ -17,8 +17,10 @@ export function ProgressionPanel({ steps, checkpoint, onCheckpoint, onMove, prev
     buildLabel: "A" | "B" | null;
 }) {
     const CAT: Record<string, string> = { weapon: "var(--weapon-400)", vitality: "var(--vitality-400)", spirit: "var(--spirit-400)" };
-    let cum = 0;
-    const rows = steps.map((it, i) => { cum += it.soulCost ?? 0; return { it, i, cumulative: cum, level: levelFromSouls(cum) }; });
+    const rows = steps.map((it, i) => {
+        const cumulative = steps.slice(0, i + 1).reduce((s, x) => s + (x.soulCost ?? 0), 0);
+        return { it, i, cumulative, level: levelFromSouls(cumulative) };
+    });
     return (
         <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
             <button type="button" onClick={onToggle} aria-expanded={open}
