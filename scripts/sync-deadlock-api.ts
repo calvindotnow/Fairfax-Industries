@@ -32,9 +32,16 @@ async function getJSON(url: string): Promise<any> {
         "User-Agent": "fairfax-industries-deadlock-sandbox (+https://github.com/)",
     };
     if (process.env.DEADLOCK_API_KEY) headers["X-API-KEY"] = process.env.DEADLOCK_API_KEY;
-    const res = await fetch(url, { headers });
-    if (!res.ok) throw new Error(`${res.status} ${url}`);
-    return res.json();
+    for (let attempt = 0; attempt <= 2; attempt++) {
+        if (attempt > 0) await sleep(attempt * 1000);
+        const res = await fetch(url, { headers });
+        if (res.ok) return res.json();
+        if (attempt < 2) {
+            console.warn(`  [warn] ${res.status} ${url} — retrying in ${attempt + 1}s…`);
+        } else {
+            throw new Error(`${res.status} ${url}`);
+        }
+    }
 }
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -700,7 +707,6 @@ async function main() {
     const base = `min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&same_lane_filter=true`;
 
     const counter_stats = await getJSON(`${ANALYTICS_API}/hero-counter-stats?${base}&min_matches=${LANE_LAB.min_matches}`);
-    const synergy_stats = await getJSON(`${ANALYTICS_API}/hero-synergy-stats?${base}&min_matches=${LANE_LAB.min_matches}`);
     // hero-level item stats (one call, bucket=hero): each row's `bucket` field is the hero_id
     const itemRows: any[] = await getJSON(`${ANALYTICS_API}/item-stats?bucket=hero&min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&min_matches=200`);
     const item_stats: Record<number, any[]> = {};
@@ -720,14 +726,18 @@ async function main() {
         counter_item_stats[hid] = {};
         for (const eid of activeHeroIds) {
             if (eid === hid) continue;
-            const rows: any[] = await getJSON(
-                `${ANALYTICS_API}/item-stats?hero_id=${hid}&enemy_hero_ids=${eid}&same_lane_filter=true&min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&min_matches=50`,
-            );
-            counter_item_stats[hid][eid] = rows
-                .map((r) => ({ item_id: r.item_id, wins: r.wins, losses: r.losses, matches: r.matches }))
-                .sort((a, b) => (b.wins / Math.max(b.matches, 1)) - (a.wins / Math.max(a.matches, 1)))
-                .slice(0, TOP_N_COUNTER_ITEMS);
-            pairCount++;
+            try {
+                const rows: any[] = await getJSON(
+                    `${ANALYTICS_API}/item-stats?hero_id=${hid}&enemy_hero_ids=${eid}&same_lane_filter=true&min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&min_matches=50`,
+                );
+                counter_item_stats[hid][eid] = rows
+                    .map((r) => ({ item_id: r.item_id, wins: r.wins, losses: r.losses, matches: r.matches }))
+                    .sort((a, b) => (b.wins / Math.max(b.matches, 1)) - (a.wins / Math.max(a.matches, 1)))
+                    .slice(0, TOP_N_COUNTER_ITEMS);
+                pairCount++;
+            } catch (e) {
+                console.warn(`  [warn] skipping pair ${hid}/${eid}: ${e}`);
+            }
             await sleep(350);
         }
     }
@@ -760,14 +770,9 @@ async function main() {
         return name != null ? (_itemNameToDbId.get(name) ?? null) : null;
     };
 
-    // Translate counter_stats: hero_id + enemy_hero_id
+    // Translate counter_stats: hero_id + enemy_hero_id; project to the 4 fields we use
     const translated_counter_stats = (counter_stats as any[])
-        .map(r => { const h = xlHero(r.hero_id), e = xlHero(r.enemy_hero_id); return (h != null && e != null) ? { ...r, hero_id: h, enemy_hero_id: e } : null; })
-        .filter((r): r is NonNullable<typeof r> => r != null);
-
-    // Translate synergy_stats: hero_id1 + hero_id2
-    const translated_synergy_stats = (synergy_stats as any[])
-        .map(r => { const h1 = xlHero(r.hero_id1), h2 = xlHero(r.hero_id2); return (h1 != null && h2 != null) ? { ...r, hero_id1: h1, hero_id2: h2 } : null; })
+        .map(r => { const h = xlHero(r.hero_id), e = xlHero(r.enemy_hero_id); return (h != null && e != null) ? { hero_id: h, enemy_hero_id: e, wins: r.wins as number, matches_played: r.matches_played as number } : null; })
         .filter((r): r is NonNullable<typeof r> => r != null);
 
     // Translate item_stats: hero key + each row's item_id
@@ -795,7 +800,7 @@ async function main() {
 
     writeFileSync(
         new URL("../src/lib/lane-lab-data.json", import.meta.url),
-        JSON.stringify({ synced_at: new Date().toISOString(), params: LANE_LAB, counter_stats: translated_counter_stats, counter_item_stats: translated_counter_item_stats, item_stats: translated_item_stats, synergy_stats: translated_synergy_stats }),
+        JSON.stringify({ synced_at: new Date().toISOString(), params: LANE_LAB, counter_stats: translated_counter_stats, counter_item_stats: translated_counter_item_stats, item_stats: translated_item_stats }),
     );
     console.log(`  lane-lab data → src/lib/lane-lab-data.json (${translated_counter_stats.length} counter pairs, ${activeHeroIds.length} heroes, ${pairCount} per-pair calls)`);
     console.log("Done.");

@@ -10,7 +10,8 @@ import { encodeBuild, type ShareState } from "@/lib/build-code";
 import { defaultShotsForFireRate, secondsOfFire } from "@/lib/hideout-utils";
 import { useIsNarrow } from "@/lib/use-narrow";
 import BuyMenu from "@/components/buy-menu";
-import { CounterPanel } from "@/components/counter-panel";
+import dynamic from "next/dynamic";
+const CounterPanel = dynamic(() => import("@/components/counter-panel").then((m) => ({ default: m.CounterPanel })), { ssr: false });
 import { HeroPicker } from "@/components/hero-picker";
 import OnboardingTour, { type TourStep } from "@/components/onboarding-tour";
 import RollingNumber from "@/components/rolling-number";
@@ -294,6 +295,19 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
         }
         return m;
     }, [imbueItems, imbueAssign]);
+
+    // Stable sim-options object for CounterPanel — memoized so its liftRows useMemo
+    // doesn't recompute on every unrelated re-render (the inline literal was a new ref each time).
+    const counterOpts = useMemo(() => ({
+        range, shots, headshots,
+        disabledAbilityIds: [...disabledAbilities],
+        hittingEnemy, resistDebuffs, activesFiring,
+        stacksByItem, accuracy, headshotPct, abilityRanks,
+        excludedActiveItemIds: [...excludedActives],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [range, shots, headshots, hittingEnemy, resistDebuffs, activesFiring, accuracy, headshotPct,
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        disabledAbilities, stacksByItem, abilityRanks, excludedActives]);
 
     // Attacker's execute / assassinate abilities (HP-% thresholds) for the enemy-health marker.
     const executes = useMemo(
@@ -625,7 +639,7 @@ export default function Hideout({ heroes, items, initialHeroId = null, initialBu
                             enemy={target}
                             yourItems={equipped}
                             enemyItems={targetEquipped}
-                            opts={{ range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring, stacksByItem, accuracy, headshotPct, abilityRanks, excludedActiveItemIds: [...excludedActives] }}
+                            opts={counterOpts}
                             items={items}
                             onAddItem={(id) => (activeBuild === "B" ? setLoadoutB : setLoadoutA)((l) => l.length < MAX_LOADOUT && !l.includes(id) ? [...l, id] : l)}
                             fmt={fmt}

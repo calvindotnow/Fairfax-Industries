@@ -1,7 +1,7 @@
 /** Two-sided duel advantage: how the time-to-kill race favors you (>1 = you win). 0 if you can't kill them. */
 export function duelAdvantage(yourTTKonThem: number | null, theirTTKonYou: number | null): number {
   if (yourTTKonThem == null || yourTTKonThem <= 0) return 0;
-  if (theirTTKonYou == null || theirTTKonYou <= 0) return Infinity;
+  if (theirTTKonYou == null || theirTTKonYou <= 0) return 999; // finite sentinel — Infinity causes NaN in withItem − base
   return theirTTKonYou / yourTTKonThem;
 }
 

@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
 import { simulate } from "@/lib/sim";
 import type { SimOptions } from "@/lib/sim";
-import { getMatchup, getCounterItems } from "@/lib/data";
+import { getMatchup, getCounterItems } from "@/lib/lane-lab";
 import { duelAdvantage, pickCandidates, rankByDuelShift } from "@/lib/counter";
 
 // Defensive staple names resolved at runtime so IDs don't need to be hardcoded.
@@ -282,7 +282,7 @@ export function CounterPanel({
                 paddingTop: 12, borderTop: "1px solid var(--border)",
                 fontSize: 11, color: "var(--text-dim)", lineHeight: 1.55,
             }}>
-                Matchup and counter-item winrates from Deadlock match data (same-lane filter, min 100 matches).
+                Matchup and counter-item winrates from Deadlock match data (same-lane filter, Phantom+ bracket). Matchup min 100 matches; counter items min 50 matches.
                 Sim deltas compare your build + each candidate — its stats plus the level gain from its soul cost — against the current enemy build; not a causal winrate projection.
                 Net lift (▲▲/▲/·) = two-sided duel-advantage shift via the Fairfax engine.
             </div>
