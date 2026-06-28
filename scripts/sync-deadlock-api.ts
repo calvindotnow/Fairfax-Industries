@@ -22,7 +22,7 @@ const FETCH_OPTS: RequestInit = {
 // ─── Lane Lab analytics ───────────────────────────────────────────────────────
 const ANALYTICS_API = "https://api.deadlock-api.com/v1/analytics";
 const LANE_LAB = { min_average_badge: 80, min_matches: 100, window_days: 30 } as const;
-const TOP_N_COUNTER_ITEMS = 12;
+const TOP_N_COUNTER_ITEMS = 16;
 // Optional dev cap: set LANE_LAB_MAX_HEROES to a small number to validate the script quickly.
 // When unset the full active-hero roster is used (the daily CI action bakes all heroes).
 const MAX_HEROES = process.env.LANE_LAB_MAX_HEROES ? Number(process.env.LANE_LAB_MAX_HEROES) : Infinity;
@@ -731,7 +731,7 @@ async function main() {
                     `${ANALYTICS_API}/item-stats?hero_id=${hid}&enemy_hero_ids=${eid}&same_lane_filter=true&min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&min_matches=50`,
                 );
                 counter_item_stats[hid][eid] = rows
-                    .map((r) => ({ item_id: r.item_id, wins: r.wins, losses: r.losses, matches: r.matches }))
+                    .map((r) => ({ item_id: r.item_id, wins: r.wins, losses: r.losses, matches: r.matches, avg_buy_time_s: Math.round(r.avg_buy_time_s ?? 0) || null }))
                     .sort((a, b) => (b.wins / Math.max(b.matches, 1)) - (a.wins / Math.max(a.matches, 1)))
                     .slice(0, TOP_N_COUNTER_ITEMS);
                 pairCount++;

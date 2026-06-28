@@ -16,6 +16,12 @@ test("getCounterItems is sorted desc by winrate and excludes nothing structurall
   for (let i = 1; i < items.length; i++) expect(items[i - 1].winrate).toBeGreaterThanOrEqual(items[i].winrate);
 });
 
+test("getCounterItems exposes buyTimeS", () => {
+  const heroes = getHeroes();
+  const rows = getCounterItems(heroes[0].id, heroes[1].id);
+  for (const r of rows) expect(r.buyTimeS === null || r.buyTimeS > 0).toBe(true);
+});
+
 test("getItemStats returns winrate-derived rows for a hero", () => {
   const rows = getItemStats(getHeroes()[0].id);
   expect(Array.isArray(rows)).toBe(true);
