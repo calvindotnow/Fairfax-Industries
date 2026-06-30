@@ -5,7 +5,7 @@ import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
 import { simulate } from "@/lib/sim";
 import type { SimOptions } from "@/lib/sim";
 import { getMatchup, getCounterItems } from "@/lib/lane-lab";
-import { duelAdvantage, pickCandidates, rankByDuelShift } from "@/lib/counter";
+import { duelAdvantage, pickCandidates, valuePerSoul, splitByCost, LANE_COST } from "@/lib/counter";
 
 // Defensive staple names resolved at runtime so IDs don't need to be hardcoded.
 // These augment the empirical counter pool; the empirical signal is primary.
@@ -36,23 +36,17 @@ export function CounterPanel({
     const counterItems = useMemo(() => getCounterItems(hero.id, enemy.id), [hero.id, enemy.id]);
     const yourItemIds = useMemo(() => yourItems.map((it) => it.id), [yourItems]);
 
-    // Section 2: empirical top counters, excluding already-owned items
-    const topCounters = useMemo(
-        () => counterItems.filter((r) => !yourItemIds.includes(r.itemId)).slice(0, 8),
-        [counterItems, yourItemIds]
-    );
-
     // Staple ids resolved from the full items list
     const stapleIds = useMemo(
         () => items.filter((it) => STAPLE_NAMES.includes(it.name)).map((it) => it.id),
         [items]
     );
 
-    // Section 3: sim-ranked biggest-lift candidates
+    // Sim-ranked candidates: each row carries deltaA, TTK/EHP deltas, soulCost, buyTimeS, winrate
     /* eslint-disable react-hooks/exhaustive-deps */
     const liftRows = useMemo(() => {
         const counterItemIds = counterItems.map((r) => r.itemId);
-        const candidates = pickCandidates(counterItemIds, yourItemIds, stapleIds, 10);
+        const candidates = pickCandidates(counterItemIds, yourItemIds, stapleIds, 16);
         if (candidates.length === 0) return [];
 
         // Base sims — no candidate item added yet
@@ -71,7 +65,7 @@ export function CounterPanel({
         const base = duelAdvantage(baseTTK, baseRev.timeToKill);
 
         // Per-candidate: two sims each (forward = your offense, reverse = their offense on you)
-        const rows = candidates.flatMap((itemId) => {
+        return candidates.flatMap((itemId) => {
             const itemObj = items.find((it) => it.id === itemId);
             if (!itemObj) return [];
 
@@ -90,23 +84,30 @@ export function CounterPanel({
             const theirTTK = rev.timeToKill;
             const yourEHP = rev.theirEhp;
             const withItem = duelAdvantage(yourTTK, theirTTK);
-
-            return [{ itemId, item: itemObj, base, withItem, yourTTK, baseTTK, yourEHP, baseYourEHP }];
-        });
-
-        const ranked = rankByDuelShift(rows);
-
-        return ranked.map(({ itemId, deltaA }) => {
-            const r = rows.find((row) => row.itemId === itemId)!;
+            const deltaA = withItem - base;
             // Offense delta: how much faster you kill them (negative = better)
-            const dTTK =
-                r.yourTTK != null && r.baseTTK != null ? r.yourTTK - r.baseTTK : null;
+            const dTTK = yourTTK != null && baseTTK != null ? yourTTK - baseTTK : null;
             // Defense delta: how much more EHP you gain (positive = better)
-            const dEHP = r.yourEHP - r.baseYourEHP;
-            return { itemId, item: r.item, deltaA, dTTK, dEHP };
+            const dEHP = yourEHP - baseYourEHP;
+            const soulCost = itemObj.soulCost ?? 0;
+            const ctr = counterItems.find((r) => r.itemId === itemId);
+            const buyTimeS = ctr?.buyTimeS ?? null;
+            const winrate = ctr?.winrate ?? null;
+
+            return [{ itemId, item: itemObj, deltaA, dTTK, dEHP, soulCost, buyTimeS, winrate }];
         });
     }, [hero.id, enemy.id, yourItems, enemyItems, opts, items, stapleIds, counterItems]);
     /* eslint-enable react-hooks/exhaustive-deps */
+
+    // Split into lane (affordable) vs power-spike groups, sorted by the appropriate signal
+    const { lane, powerSpike } = useMemo(() => {
+        const split = splitByCost(liftRows);
+        const laneSorted = [...split.lane].sort(
+            (a, b) => valuePerSoul(b.deltaA, b.soulCost) - valuePerSoul(a.deltaA, a.soulCost)
+        );
+        const powerSorted = [...split.powerSpike].sort((a, b) => b.deltaA - a.deltaA);
+        return { lane: laneSorted, powerSpike: powerSorted };
+    }, [liftRows]);
 
     // deltaA → glyph: tuning thresholds — 0.1 / 0.3 are open knobs per the design spec
     const glyph = (deltaA: number) => {
@@ -133,6 +134,63 @@ export function CounterPanel({
         cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
     };
 
+    // Row renderer shared between Lane counters and Power spikes
+    type LiftRow = { itemId: number; item: ItemWithModifiers; deltaA: number; dTTK: number | null; dEHP: number; soulCost: number; buyTimeS: number | null; winrate: number | null };
+    const renderCounterRow = (r: LiftRow) => {
+        const gl = glyph(r.deltaA);
+        const glyphColor =
+            gl === "▲▲" ? "var(--vitality-400)"
+            : gl === "▲" ? "var(--brass-300)"
+            : "var(--text-dim)";
+        const ttkStr =
+            r.dTTK == null ? "—"
+            : r.dTTK <= 0 ? `${r.dTTK.toFixed(1)}s`
+            : `+${r.dTTK.toFixed(1)}s`;
+        const ttkColor = r.dTTK != null && r.dTTK < 0 ? "var(--weapon-400)" : "var(--text-dim)";
+        const ehpStr = r.dEHP >= 0 ? `+${fmt(Math.round(r.dEHP))}` : fmt(Math.round(r.dEHP));
+        const ehpColor = r.dEHP > 0 ? "var(--vitality-400)" : "var(--text-dim)";
+        const buyMin = r.buyTimeS != null ? `~${Math.round(r.buyTimeS / 60)}m` : null;
+
+        return (
+            <div key={r.itemId} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                <span style={{ flex: 1, color: "var(--text)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.item.name}
+                </span>
+                {/* Soul cost */}
+                <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 11, color: "var(--text-dim)", minWidth: 48, textAlign: "right", flexShrink: 0 }}>
+                    §{r.soulCost.toLocaleString()}
+                </span>
+                {/* Net glyph */}
+                <span style={{ fontFamily: "var(--font-numeric)", fontSize: 11, color: glyphColor, minWidth: 16, textAlign: "center", flexShrink: 0 }}>
+                    {gl}
+                </span>
+                {/* Offense: TTK delta */}
+                <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 11, color: ttkColor, minWidth: 52, textAlign: "right", flexShrink: 0 }}>
+                    TTK {ttkStr}
+                </span>
+                {/* Defense: EHP delta */}
+                <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 11, color: ehpColor, minWidth: 68, textAlign: "right", flexShrink: 0 }}>
+                    EHP {ehpStr}
+                </span>
+                {/* Empirical winrate */}
+                {r.winrate != null && (
+                    <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 12, color: "var(--vitality-400)", minWidth: 34, textAlign: "right", flexShrink: 0 }}>
+                        {Math.round(r.winrate * 100)}%
+                    </span>
+                )}
+                {/* Typical buy time — context only */}
+                {buyMin && (
+                    <span style={{ fontSize: 11, color: "var(--text-dim)", opacity: 0.6, minWidth: 28, textAlign: "right", flexShrink: 0 }}>
+                        {buyMin}
+                    </span>
+                )}
+                <button type="button" onClick={() => onAddItem(r.itemId)} style={addBtnStyle}>
+                    + add
+                </button>
+            </div>
+        );
+    };
+
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
@@ -155,136 +213,69 @@ export function CounterPanel({
                 )}
             </div>
 
-            {/* ── Section 2: Top counter items (empirical) ── */}
-            <div style={{ paddingBottom: 14, borderBottom: "1px solid var(--border)" }}>
-                <span style={{
-                    display: "block", fontSize: 10, fontWeight: 600, letterSpacing: "0.14em",
-                    textTransform: "uppercase", color: "var(--text-dim)", marginBottom: 8,
-                }}>
-                    Top counters
-                </span>
-                {topCounters.length === 0 ? (
-                    <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>
-                        No counter-item data for this matchup.
+            {/* ── Sections 2+3: Lane Counters + Power Spikes (consolidated) ── */}
+            {liftRows.length === 0 ? (
+                <div>
+                    <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)", fontStyle: "italic" }}>
+                        Not enough lane data — no counter candidates for this matchup.
                     </p>
-                ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                        {topCounters.map((r) => {
-                            const it = items.find((x) => x.id === r.itemId);
-                            const name = it?.name ?? `Item ${r.itemId}`;
-                            return (
-                                <div key={r.itemId} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                                    <span style={{ flex: 1, color: "var(--text)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                        {name}
-                                    </span>
-                                    <span style={{
-                                        fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums",
-                                        fontSize: 12, color: "var(--vitality-400)", minWidth: 34, textAlign: "right",
-                                    }}>
-                                        {Math.round(r.winrate * 100)}%
-                                    </span>
-                                    <span style={{
-                                        fontSize: 11, color: "var(--text-dim)",
-                                        minWidth: 44, textAlign: "right",
-                                    }}>
-                                        {r.matches >= 1000
-                                            ? `${(r.matches / 1000).toFixed(0)}k`
-                                            : r.matches.toString()}
-                                    </span>
-                                    <button type="button" onClick={() => onAddItem(r.itemId)} style={addBtnStyle}>
-                                        + add
-                                    </button>
-                                </div>
-                            );
-                        })}
+                </div>
+            ) : (
+                <>
+                    {/* Lane counters group */}
+                    <div style={{ paddingBottom: 14, borderBottom: "1px solid var(--border)" }}>
+                        <span style={{
+                            display: "block", fontSize: 10, fontWeight: 600, letterSpacing: "0.14em",
+                            textTransform: "uppercase", color: "var(--text-dim)", marginBottom: 8,
+                        }}>
+                            Lane counters
+                        </span>
+                        {lane.length === 0 ? (
+                            <p style={{ margin: "0 0 6px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                                No cheap counters for this matchup — see power spikes below.
+                            </p>
+                        ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                                {lane.map((r) => renderCounterRow(r))}
+                            </div>
+                        )}
+                        <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.4 }}>
+                            ranked by value per soul · affordable picks
+                        </p>
                     </div>
-                )}
-                <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.4 }}>
-                    Winrate vs baseline — items with the highest win frequency when playing this matchup.
-                </p>
-            </div>
 
-            {/* ── Section 3: Biggest lift (sim-ranked) ── */}
-            <div>
-                <span style={{
-                    display: "block", fontSize: 10, fontWeight: 600, letterSpacing: "0.14em",
-                    textTransform: "uppercase", color: "var(--text-dim)", marginBottom: 8,
-                }}>
-                    Biggest lift
-                </span>
-                {liftRows.length === 0 ? (
-                    <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>
-                        No candidates — add counter items to the enemy build first, or check that hero/enemy are set.
-                    </p>
-                ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                        {liftRows.map((r) => {
-                            const gl = glyph(r.deltaA);
-                            const glyphColor =
-                                gl === "▲▲" ? "var(--vitality-400)"
-                                : gl === "▲" ? "var(--brass-300)"
-                                : "var(--text-dim)";
-                            // Offense: Δ yourTTK (negative = faster kill)
-                            const ttkStr =
-                                r.dTTK == null ? "—"
-                                : r.dTTK <= 0 ? `${r.dTTK.toFixed(1)}s`
-                                : `+${r.dTTK.toFixed(1)}s`;
-                            const ttkColor =
-                                r.dTTK != null && r.dTTK < 0 ? "var(--weapon-400)" : "var(--text-dim)";
-                            // Defense: Δ yourEHP (positive = more survivable)
-                            const ehpStr =
-                                r.dEHP >= 0
-                                    ? `+${fmt(Math.round(r.dEHP))}`
-                                    : fmt(Math.round(r.dEHP));
-                            const ehpColor = r.dEHP > 0 ? "var(--vitality-400)" : "var(--text-dim)";
-
-                            return (
-                                <div key={r.itemId} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                                    <span style={{
-                                        flex: 1, color: "var(--text)", minWidth: 0,
-                                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                                    }}>
-                                        {r.item.name}
-                                    </span>
-                                    {/* Net glyph */}
-                                    <span style={{
-                                        fontFamily: "var(--font-numeric)", fontSize: 11,
-                                        color: glyphColor, minWidth: 16, textAlign: "center", flexShrink: 0,
-                                    }}>
-                                        {gl}
-                                    </span>
-                                    {/* Offense: TTK delta */}
-                                    <span style={{
-                                        fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums",
-                                        fontSize: 11, color: ttkColor, minWidth: 52, textAlign: "right", flexShrink: 0,
-                                    }}>
-                                        TTK {ttkStr}
-                                    </span>
-                                    {/* Defense: EHP delta */}
-                                    <span style={{
-                                        fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums",
-                                        fontSize: 11, color: ehpColor, minWidth: 68, textAlign: "right", flexShrink: 0,
-                                    }}>
-                                        EHP {ehpStr}
-                                    </span>
-                                    <button type="button" onClick={() => onAddItem(r.itemId)} style={addBtnStyle}>
-                                        + add
-                                    </button>
-                                </div>
-                            );
-                        })}
+                    {/* Power spikes group */}
+                    <div>
+                        <span style={{
+                            display: "block", fontSize: 10, fontWeight: 600, letterSpacing: "0.14em",
+                            textTransform: "uppercase", color: "var(--text-dim)", marginBottom: 8,
+                        }}>
+                            Power spikes
+                        </span>
+                        {powerSpike.length === 0 ? (
+                            <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>
+                                No tier-4 counter candidates for this matchup.
+                            </p>
+                        ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                                {powerSpike.map((r) => renderCounterRow(r))}
+                            </div>
+                        )}
+                        <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.4 }}>
+                            strongest counters · usually tier-4
+                        </p>
                     </div>
-                )}
-            </div>
+                </>
+            )}
 
             {/* ── Disclosure ── */}
             <div style={{
                 paddingTop: 12, borderTop: "1px solid var(--border)",
                 fontSize: 11, color: "var(--text-dim)", lineHeight: 1.55,
             }}>
-                Matchup and counter-item winrates from Deadlock match data (same-lane filter, Phantom+ bracket). Matchup min 100 matches; counter items min 50 matches.
-                Sim deltas compare your build + each candidate — its stats plus the level gain from its soul cost — against the current enemy build; not a causal winrate projection.
-                Net lift (▲▲/▲/·) = two-sided duel-advantage shift via the Fairfax engine.
+                Groups split by soul cost (lane = §{LANE_COST.toLocaleString()} or under; power spikes = above).
+                Lane counters ranked by sim duel-shift per soul; power spikes by raw duel-shift.
+                Winrate is vs baseline from Deadlock match data (Phantom+, same-lane filter). Buy time is typical from match data — context only, not the split signal.
             </div>
 
         </div>
