@@ -18,12 +18,6 @@ export function pickCandidates(counterItemIds: number[], ownedIds: number[], sta
   return out;
 }
 
-/** Rank candidates by net duel shift (withItem − base), desc. */
-export function rankByDuelShift(rows: { itemId: number; base: number; withItem: number }[]): { itemId: number; deltaA: number }[] {
-  return rows.map((r) => ({ itemId: r.itemId, deltaA: r.withItem - r.base }))
-             .sort((a, b) => b.deltaA - a.deltaA);
-}
-
 /** Counters at/under this soul cost are "affordable/lane" picks; above = tier-4 power spikes. Tunable. */
 export const LANE_COST = 4000;
 
