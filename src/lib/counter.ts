@@ -23,3 +23,20 @@ export function rankByDuelShift(rows: { itemId: number; base: number; withItem: 
   return rows.map((r) => ({ itemId: r.itemId, deltaA: r.withItem - r.base }))
              .sort((a, b) => b.deltaA - a.deltaA);
 }
+
+/** Counters at/under this soul cost are "affordable/lane" picks; above = tier-4 power spikes. Tunable. */
+export const LANE_COST = 4000;
+
+/** Counter value normalized by cost — efficient cheap picks beat marginal expensive ones. */
+export function valuePerSoul(deltaA: number, soulCost: number): number {
+  return soulCost > 0 ? deltaA / soulCost : 0;
+}
+
+/** Split candidate rows into lane (affordable) vs power-spike (expensive/tier-4). */
+export function splitByCost<T extends { soulCost: number }>(
+  rows: T[], laneCostMax: number = LANE_COST,
+): { lane: T[]; powerSpike: T[] } {
+  const lane: T[] = []; const powerSpike: T[] = [];
+  for (const r of rows) (r.soulCost > 0 && r.soulCost <= laneCostMax ? lane : powerSpike).push(r);
+  return { lane, powerSpike };
+}
