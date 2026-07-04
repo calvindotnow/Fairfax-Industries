@@ -10,7 +10,7 @@ Severity: 🔴 blocks a cohort · 🟠 major friction / trust · 🟡 polish / e
 
 ## Open
 
-- 🟡 **Share codes can drift across patches** — codes reference items/heroes positionally, so a link made before a patch can resolve to the wrong item after the pool changes. VERSION 2 narrowed this, but it isn't fully patch-stable. *Fix idea:* encode a stable id (the API `class_name`) or warn on a version/patch mismatch. (`src/lib/build-code.ts`)
+*(No open bugs — log new ones here as Problem → Why → Fix idea.)*
 
 ## Known engine approximations (documented, intentional)
 
@@ -32,7 +32,11 @@ Flagged by the pre-launch review; deliberately deferred to avoid launch-eve chur
 
 ---
 
-*Resolved (for reference): mobile/touch overflow, hover-only item stats, the "Proving Ground"
+*Resolved (for reference): **share-code patch drift** (closed 2026-07-04 — VERSION 3 codes embed a
+2-byte FNV-1a fingerprint of the sorted item-name pool; `decodeBuildMeta` in `src/lib/build-code.ts`
+exposes a `poolMismatch` flag and `/b/<code>`, `/hideout`, `/lane` render an "older patch" notice;
+V1/V2 legacy codes still decode, treated as unknown-provenance and never flagged),
+mobile/touch overflow, hover-only item stats, the "Proving Ground"
 naming split, headshots-exceed-shots, silent copy-link no-op, missing data-freshness indicator,
 no onboarding, no "show your work", missing hero/item pages, the proc/shotgun over-count, the
 missing base-headshot multiplier, Burst-Fire double-count, fuller melee, item stacking,

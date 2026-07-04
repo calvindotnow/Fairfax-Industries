@@ -25,3 +25,19 @@ test("resolveBuild decodes a share code into heroes + a positive burst", async (
 test("resolveBuild returns null for an invalid code", async () => {
   expect(await resolveBuild("not-a-real-code")).toBeNull();
 });
+
+test("resolveBuild reports no pool mismatch for a freshly-minted code against the current pool", async () => {
+  const heroes = getHeroes();
+  const items = getItems();
+  const hero = heroes[0];
+  const target = heroes[1] ?? heroes[0];
+
+  const code = encodeBuild(
+    { heroId: hero.id, targetId: target.id, loadout: [], targetLoadout: [], range: 25, shots: 8, headshots: 0, matchTargetLevel: true },
+    heroes, items,
+  );
+
+  const b = await resolveBuild(code);
+  expect(b).not.toBeNull();
+  expect(b!.poolMismatch).toBe(false);
+});

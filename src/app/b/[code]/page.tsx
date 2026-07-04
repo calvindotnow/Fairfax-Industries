@@ -28,10 +28,11 @@ export default async function SharedBuildPage({ params }: { params: Promise<{ co
     const { code } = await params;
     const b = await resolveBuild(code);
     if (!b) notFound();
-    const { hero, target, equipped, targetEquipped, result } = b;
+    const { hero, target, equipped, targetEquipped, result, poolMismatch } = b;
 
     return (
         <div className="space-y-10">
+            {poolMismatch ? <PatchDriftNotice /> : null}
             <div>
                 <p className="overline mb-3">Shared build</p>
                 <h1 className="font-display text-4xl md:text-5xl leading-tight text-foreground">
@@ -80,6 +81,25 @@ export default async function SharedBuildPage({ params }: { params: Promise<{ co
                 Numbers from the Fairfax damage engine. See{" "}
                 <Link href="/methodology" className="text-foreground underline-offset-2 hover:underline">how this is calculated</Link>.
             </p>
+        </div>
+    );
+}
+
+// Shown when the share code's embedded item-pool fingerprint (VERSION 3) disagrees
+// with the current item pool — the link was made on an older patch, so some items
+// may have been renamed/removed/added since and the decoded build is best-effort.
+function PatchDriftNotice() {
+    return (
+        <div
+            className="rounded-lg px-4 py-3 text-sm"
+            style={{
+                background: "var(--surface-raised)",
+                border: "1px solid var(--border-brass)",
+                color: "var(--text-muted)",
+            }}
+        >
+            <span style={{ color: "var(--brass-300)" }}>⚠</span>{" "}
+            This build link was made on an older patch — some items may have changed.
         </div>
     );
 }

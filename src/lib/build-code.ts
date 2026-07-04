@@ -7,10 +7,29 @@
  * position in a sorted list. This keeps codes **patch-stable**: adding or removing
  * items between game patches no longer shifts everyone else's references. An item
  * that's removed in a later patch simply drops out of the decoded build instead of
- * silently resolving to the wrong neighbour. (Format VERSION 2.)
+ * silently resolving to the wrong neighbour. (Introduced in format VERSION 2.)
  *
- * VERSION 1 codes — positional, name-sorted — are still decoded for backward
- * compatibility with links shared before the switch.
+ * Name-hashing alone can't distinguish "every referenced item still exists" from
+ * "an item was silently renamed/replaced and now hashes to something else" — a link
+ * can still resolve to a *different* item set after a patch without anyone noticing.
+ * VERSION 3 adds a 2-byte **pool fingerprint**: an FNV-1a hash over the sorted list
+ * of all item names at encode time, truncated to 16 bits. On decode, we recompute the
+ * same fingerprint over the *current* item pool — if it disagrees, the item pool has
+ * changed shape since the link was minted, and the decoded build's exact contents are
+ * no longer guaranteed. We still decode best-effort (same as V2's per-item drop
+ * behavior) and let the caller decide whether to warn the user.
+ *
+ * `decodeBuild` keeps its historical signature/behavior (a bare `ShareState | null`)
+ * so existing call sites don't need to change. `decodeBuildMeta` is the additive entry
+ * point that also reports the pool-mismatch verdict; use it wherever the UI should
+ * surface a "this link may be stale" notice.
+ *
+ * VERSION 1 (positional, name-sorted) and VERSION 2 (name-hash, no fingerprint) codes
+ * are still decoded for backward compatibility with links shared before VERSION 3.
+ * Neither carries pool-provenance information, so `decodeBuildMeta` reports
+ * `poolMismatch: false` for them ("unknown provenance" — we have nothing to compare
+ * against, so we don't guess and don't warn) rather than treating every legacy link as
+ * suspect.
  */
 import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
 
@@ -25,7 +44,9 @@ export interface ShareState {
     matchTargetLevel: boolean;
 }
 
-const VERSION = 2;
+const VERSION_1 = 1;
+const VERSION_2 = 2;
+const VERSION = 3;
 const HERO_NONE = 0xffff; // sentinel hero hash for "unset"
 
 const clampByte = (n: number) => Math.max(0, Math.min(255, Math.round(n || 0)));
@@ -42,6 +63,15 @@ function fnv1a(s: string): number {
 // Heroes: 16-bit (small pool, negligible collisions). Items: 24-bit (~300 items → ~0.003 expected collisions).
 const heroHash = (name: string) => fnv1a(name) & 0xffff;
 const itemHash = (name: string) => fnv1a(name) & 0xffffff;
+
+// 16-bit fingerprint of the whole item pool's shape: FNV-1a over the sorted, joined
+// item names. Order-independent (we sort first) so re-fetching/re-ordering the same
+// data never trips a false mismatch — only an actual add/remove/rename does.
+function poolFingerprint(items: ItemWithModifiers[]): [number, number] {
+    const names = items.map((i) => i.name).sort();
+    const h = fnv1a(names.join("")) & 0xffff;
+    return [(h >> 8) & 0xff, h & 0xff];
+}
 
 function bytesToBase64Url(bytes: number[]): string {
     let bin = "";
@@ -84,6 +114,7 @@ export function encodeBuild(
     const t = itemBytes(state.targetLoadout);
     const bytes = [
         VERSION,
+        ...poolFingerprint(items),
         ...heroBytes(state.heroId),
         ...heroBytes(state.targetId),
         state.matchTargetLevel ? 1 : 0,
@@ -96,46 +127,87 @@ export function encodeBuild(
     return bytesToBase64Url(bytes);
 }
 
+// Shared body decoder for VERSION 2 and VERSION 3: identical name-hash payload,
+// starting at byte offset `start` (1 for V2 — right after the version byte; 3 for
+// V3 — after the version byte + 2-byte pool fingerprint).
+function decodeHashedBody(
+    b: number[],
+    start: number,
+    heroes: HeroWithAbilities[],
+    items: ItemWithModifiers[]
+): ShareState {
+    const heroByHash = new Map(heroes.map((h) => [heroHash(h.name), h.id]));
+    const itemByHash = new Map(items.map((i) => [itemHash(i.name), i.id]));
+
+    let p = start;
+    const readHero = (): number | null => {
+        const v = ((b[p++] ?? 0) << 8) | (b[p++] ?? 0);
+        return v === HERO_NONE ? null : heroByHash.get(v) ?? null;
+    };
+    const heroId = readHero();
+    const targetId = readHero();
+    const matchTargetLevel = b[p++] === 1;
+    const range = b[p++];
+    const shots = b[p++];
+    const headshots = b[p++];
+    const readItems = (): number[] => {
+        const n = b[p++] ?? 0;
+        const out: number[] = [];
+        for (let i = 0; i < n; i++) {
+            const v = ((b[p++] ?? 0) << 16) | ((b[p++] ?? 0) << 8) | (b[p++] ?? 0);
+            const id = itemByHash.get(v);
+            if (id != null) out.push(id); // dropped items (removed in a later patch) simply fall away
+        }
+        return out;
+    };
+    const loadout = readItems();
+    const targetLoadout = readItems();
+    return { heroId, targetId, loadout, targetLoadout, range, shots, headshots, matchTargetLevel };
+}
+
+export interface DecodeResult {
+    state: ShareState | null;
+    /** true only for a VERSION 3 code whose embedded pool fingerprint disagrees with
+     *  the current item pool — i.e. the item list has changed shape (added/removed/
+     *  renamed) since the link was minted, so some referenced items may have silently
+     *  dropped or resolved differently. V1/V2 codes carry no fingerprint ("unknown
+     *  provenance") and always report `false` here rather than being guessed at. */
+    poolMismatch: boolean;
+}
+
 export function decodeBuild(
     code: string,
     heroes: HeroWithAbilities[],
     items: ItemWithModifiers[]
 ): ShareState | null {
+    return decodeBuildMeta(code, heroes, items).state;
+}
+
+/** Additive sibling of `decodeBuild` that also reports pool-fingerprint drift, for UI
+ *  surfaces that want to warn the user ("this link was made on an older patch").
+ *  Decoding itself is always best-effort, exactly like `decodeBuild` — a mismatch
+ *  never blocks decoding, it's just surfaced alongside the result. */
+export function decodeBuildMeta(
+    code: string,
+    heroes: HeroWithAbilities[],
+    items: ItemWithModifiers[]
+): DecodeResult {
     try {
         const b = base64UrlToBytes(code);
-        if (b.length < 1) return null;
-        if (b[0] === 1) return decodeV1(b, heroes, items);
-        if (b[0] !== VERSION) return null;
+        if (b.length < 1) return { state: null, poolMismatch: false };
+        if (b[0] === VERSION_1) return { state: decodeV1(b, heroes, items), poolMismatch: false };
+        if (b[0] === VERSION_2) return { state: decodeHashedBody(b, 1, heroes, items), poolMismatch: false };
+        if (b[0] !== VERSION) return { state: null, poolMismatch: false };
 
-        const heroByHash = new Map(heroes.map((h) => [heroHash(h.name), h.id]));
-        const itemByHash = new Map(items.map((i) => [itemHash(i.name), i.id]));
+        const [expectedHi, expectedLo] = poolFingerprint(items);
+        const gotHi = b[1] ?? 0;
+        const gotLo = b[2] ?? 0;
+        const poolMismatch = gotHi !== expectedHi || gotLo !== expectedLo;
 
-        let p = 1;
-        const readHero = (): number | null => {
-            const v = ((b[p++] ?? 0) << 8) | (b[p++] ?? 0);
-            return v === HERO_NONE ? null : heroByHash.get(v) ?? null;
-        };
-        const heroId = readHero();
-        const targetId = readHero();
-        const matchTargetLevel = b[p++] === 1;
-        const range = b[p++];
-        const shots = b[p++];
-        const headshots = b[p++];
-        const readItems = (): number[] => {
-            const n = b[p++] ?? 0;
-            const out: number[] = [];
-            for (let i = 0; i < n; i++) {
-                const v = ((b[p++] ?? 0) << 16) | ((b[p++] ?? 0) << 8) | (b[p++] ?? 0);
-                const id = itemByHash.get(v);
-                if (id != null) out.push(id); // dropped items (removed in a later patch) simply fall away
-            }
-            return out;
-        };
-        const loadout = readItems();
-        const targetLoadout = readItems();
-        return { heroId, targetId, loadout, targetLoadout, range, shots, headshots, matchTargetLevel };
+        const state = decodeHashedBody(b, 3, heroes, items);
+        return { state, poolMismatch };
     } catch {
-        return null;
+        return { state: null, poolMismatch: false };
     }
 }
 
