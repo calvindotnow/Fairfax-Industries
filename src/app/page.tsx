@@ -28,17 +28,27 @@ export default async function HomePage() {
           <span className="italic text-primary">Prove</span> it.
         </h1>
         <p className="mt-6 text-lg leading-relaxed text-muted-foreground">
-          Kit out any hero and see exactly what the build does to an enemy —
-          burst, sustained DPS, time-to-kill, the soul breakpoints, even the
-          health line where your execute lands. Live patch data, recomputed as
-          you tweak. No more eyeballing it in the practice range.
+          What do you build to beat this lane? Pick your hero and theirs, and
+          Lane Matchup reads the fight — resistances, breakpoints, the counter
+          items that actually swing it. Want the full workbench? The Damage
+          Calculator underneath is the same engine, opened all the way up:
+          burst, sustained DPS, time-to-kill, ability ranks, the soul
+          breakpoints, even the health line where your execute lands. Live
+          patch data, recomputed as you tweak.
         </p>
-        <div className="mt-8 flex items-center gap-4">
+        <div className="mt-8 flex flex-wrap items-center gap-4">
           <Link
-            href="/hideout"
+            href="/lane"
             className="group inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
           >
-            Start building
+            Solve your lane
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </Link>
+          <Link
+            href="/hideout"
+            className="group inline-flex items-center gap-2 rounded-md border border-border px-5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
+          >
+            Open the Damage Calculator
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
           </Link>
         </div>
@@ -57,8 +67,8 @@ export default async function HomePage() {
           {portraits.map((h) => (
             <Link
               key={h.name}
-              href={`/hideout?hero=${h.id}`}
-              title={`${h.name} — open in New Build`}
+              href={`/lane?hero=${h.id}`}
+              title={`${h.name} — open in Lane Matchup`}
               className="h-14 w-14 overflow-hidden rounded-md surface"
             >
               <Image
@@ -82,16 +92,16 @@ export default async function HomePage() {
       <section className="grid gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-3">
         {[
           {
-            title: "Simulate damage",
-            body: "Exact DPS, burst combos, and time-to-kill against any hero's resistances.",
+            title: "Read the lane",
+            body: "Lane Matchup pits your hero against theirs and recommends counter items by value per soul spent.",
+          },
+          {
+            title: "Simulate the damage",
+            body: "The Damage Calculator behind it is the real engine — exact DPS, burst combos, and time-to-kill against any hero's resistances.",
           },
           {
             title: "Find breakpoints",
-            body: "See where each item stops being worth its souls before you commit.",
-          },
-          {
-            title: "Test any matchup",
-            body: "Pit your build against any enemy's resistances and read the real damage.",
+            body: "See where each item stops being worth its souls before you commit, in either surface.",
           },
         ].map((f) => (
           <div key={f.title} className="bg-background p-6">
