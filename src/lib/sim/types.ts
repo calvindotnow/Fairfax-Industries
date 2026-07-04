@@ -17,39 +17,116 @@ export interface StatModifier {
     percentBonus: number;
 }
 
-/** A direct-damage effect an item adds (proc, conditional flat/percent add). */
-export interface ItemEffect {
-    kind: "onHitProc" | "onHitFlat" | "conditionalWeaponPct" | "conditionalFireRate" | "targetResistReduction" | "stacking" | "imbue" | "activeBuff" | "activeDamage";
-    damageType?: DamageType;
-    value: number;
-    // stacking: `value` = per-stack amount, `stat` = the stat it boosts, `maxStacks` = cap.
-    // (Berserker: +7% bulletDamage/stack ×10; Glass Cannon: +7% weaponFireRate/stack ×8.)
-    // activeDamage: an active item's own on-cast direct damage (Arctic Blast 175 +0.70/Spirit,
-    // Cold Front, Silence Wave, …). `value` = base, `spiritScale` = per-Spirit bonus. Folded
-    // into burst while "Actives firing" is on (or always, if `alwaysOn`); always listed in the
-    // Spirit panel. `healthPctDamage` adds that % of the target's max health (Tankbuster, the
-    // calculator assumes the breakpoint is met); `ignoreResist` skips mitigation; `alwaysOn`
-    // counts toward burst without the Actives-firing toggle (passive charge-up procs).
-    healthPctDamage?: number;
-    ignoreResist?: boolean;
-    alwaysOn?: boolean;
-    stat?: string;
-    maxStacks?: number;
-    valueType?: "flat" | "percentOfShot";
-    condition?: "headshot";
-    procCooldown?: number; // seconds; 0 = every shot
-    spiritScale?: number; // bonus per point of Spirit Power (e.g. Mystic Shot 1.2)
-    // conditionalFireRate: `value` = activated fire-rate %, `baseValue` = the always-on
-    // baseline % (already a normal modifier). When "hitting enemy", the bonus becomes
-    // `value` instead of `baseValue` (Burst Fire: 10% → 32%, never both).
-    baseValue?: number;
-    rangeMin?: number; // meters
-    rangeMax?: number; // meters
+/**
+ * A direct-damage / combat effect an item adds. Modeled as a discriminated union
+ * keyed on `kind`: each variant carries only the fields that variant actually uses,
+ * so consumers must narrow on `kind` before touching kind-specific fields.
+ */
+
+/** Fields common to every effect variant, regardless of `kind`. */
+export interface ItemEffectBase {
     itemName?: string;
     // The id of the item this effect came from. Attached when the engine flattens each
     // item's effects, so burst inclusion can be refined per item (excludedActiveItemIds).
     itemId?: number;
 }
+
+/** An on-hit proc: fires per shot or on a cooldown. `valueType` "percentOfShot" scales
+ *  off the shot; otherwise `value` is flat (spirit procs add `spiritScale` per Spirit). */
+export interface OnHitProcEffect extends ItemEffectBase {
+    kind: "onHitProc";
+    damageType?: DamageType;
+    value: number;
+    valueType?: "flat" | "percentOfShot";
+    procCooldown?: number; // seconds; 0 = every shot
+    spiritScale?: number; // bonus per point of Spirit Power (e.g. Mystic Shot 1.2)
+}
+
+/** A flat conditional on-hit add (Headshot Booster: +45 on a headshot). */
+export interface OnHitFlatEffect extends ItemEffectBase {
+    kind: "onHitFlat";
+    damageType?: DamageType;
+    value: number;
+    condition?: "headshot";
+    valueType?: "flat";
+}
+
+/** Range-conditional weapon power (Sharpshooter / Close Quarters) added into the
+ *  weapon% bucket when the range is within [rangeMin, rangeMax]. */
+export interface ConditionalWeaponPctEffect extends ItemEffectBase {
+    kind: "conditionalWeaponPct";
+    value: number;
+    rangeMin?: number; // meters
+    rangeMax?: number; // meters
+}
+
+/** Burst Fire dual-rate: `value` = activated fire-rate %, `baseValue` = the always-on
+ *  baseline %. When "hitting enemy", the bonus becomes `value` instead of `baseValue`
+ *  (Burst Fire: 10% → 32%, never both). */
+export interface ConditionalFireRateEffect extends ItemEffectBase {
+    kind: "conditionalFireRate";
+    value: number;
+    baseValue?: number;
+}
+
+/** Reduces the TARGET's bullet/spirit resist (Crippling Headshot, Bullet Resist
+ *  Shredder). Stored as a positive reduction amount. */
+export interface TargetResistReductionEffect extends ItemEffectBase {
+    kind: "targetResistReduction";
+    damageType?: DamageType;
+    value: number;
+}
+
+/** A stacking item: `value` = per-stack amount, `stat` = the stat it boosts,
+ *  `maxStacks` = cap. (Berserker: +7% bulletDamage/stack ×10; Glass Cannon:
+ *  +7% weaponFireRate/stack ×8.) A display-only marker omits `stat` (value 0). */
+export interface StackingEffect extends ItemEffectBase {
+    kind: "stacking";
+    value: number;
+    stat?: string;
+    maxStacks?: number;
+}
+
+/** An imbue relationship marker: the item imbues one ability (no direct numbers). */
+export interface ImbueEffect extends ItemEffectBase {
+    kind: "imbue";
+    value: number;
+}
+
+/** An active item's on-cast self-buff (Blood Tribute +35% fire rate). Applied only
+ *  while "Actives firing" is on; `stat` is the stat it boosts. */
+export interface ActiveBuffEffect extends ItemEffectBase {
+    kind: "activeBuff";
+    value: number;
+    stat: string;
+}
+
+/** An active item's own on-cast direct damage (Arctic Blast 175 +0.70/Spirit, Cold
+ *  Front, Silence Wave, …). `value` = base, `spiritScale` = per-Spirit bonus. Folded
+ *  into burst while "Actives firing" is on (or always, if `alwaysOn`); always listed in
+ *  the Spirit panel. `healthPctDamage` adds that % of the target's max health (Tankbuster,
+ *  the calculator assumes the breakpoint is met); `ignoreResist` skips mitigation;
+ *  `alwaysOn` counts toward burst without the Actives-firing toggle. */
+export interface ActiveDamageEffect extends ItemEffectBase {
+    kind: "activeDamage";
+    damageType?: DamageType;
+    value: number;
+    spiritScale?: number;
+    healthPctDamage?: number;
+    ignoreResist?: boolean;
+    alwaysOn?: boolean;
+}
+
+export type ItemEffect =
+    | OnHitProcEffect
+    | OnHitFlatEffect
+    | ConditionalWeaponPctEffect
+    | ConditionalFireRateEffect
+    | TargetResistReductionEffect
+    | StackingEffect
+    | ImbueEffect
+    | ActiveBuffEffect
+    | ActiveDamageEffect;
 
 export interface AbilityData {
     id: number;
@@ -110,8 +187,13 @@ export interface AbilityScalingInfo {
     rangeScalesWithSpirit: boolean;
     durationScalesWithSpirit: boolean;
     scalesWithSpirit: boolean;
-    executePct?: number;
-    executeKind?: "kill" | "bonus";
+}
+
+/** An ability's resolved execute / assassinate threshold: the enemy-HP-% marker and
+ *  whether crossing it kills outright ("kill") or grants bonus damage ("bonus"). */
+export interface AbilityExecute {
+    pct: number;
+    kind: "kill" | "bonus";
 }
 
 export interface HeroData {

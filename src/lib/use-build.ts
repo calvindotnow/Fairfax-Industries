@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
-import { simulate, parseEffects, deriveAbilityScaling, sumPercentModifiers } from "@/lib/sim";
+import { simulate, parseEffects, abilityExecute, sumPercentModifiers } from "@/lib/sim";
 import { encodeBuild, type ShareState } from "@/lib/build-code";
 import { defaultShotsForFireRate } from "@/lib/hideout-utils";
 
@@ -189,7 +189,7 @@ export function useBuild({
     // Attacker's execute / assassinate abilities (HP-% thresholds) for the enemy-health marker.
     const executes = useMemo(
         () => (hero?.abilities ?? [])
-            .map((a) => { const s = deriveAbilityScaling(a); return s.executePct ? { name: a.name, pct: s.executePct, kind: s.executeKind ?? "bonus" } : null; })
+            .map((a) => { const ex = abilityExecute(a); return ex ? { name: a.name, pct: ex.pct, kind: ex.kind } : null; })
             .filter((x): x is { name: string; pct: number; kind: "kill" | "bonus" } => x != null),
         [hero]
     );

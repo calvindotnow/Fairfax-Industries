@@ -8,6 +8,7 @@
  */
 import type {
     AbilityData,
+    AbilityExecute,
     AbilityRow,
     AbilityScaling,
     AbilityScalingInfo,
@@ -18,6 +19,13 @@ import type {
     HeroData,
     ItemData,
     ItemEffect,
+    OnHitProcEffect,
+    ActiveDamageEffect,
+    ActiveBuffEffect,
+    StackingEffect,
+    ConditionalWeaponPctEffect,
+    ConditionalFireRateEffect,
+    TargetResistReductionEffect,
     SimOptions,
     SimResult,
     StatModifier,
@@ -217,9 +225,25 @@ export function deriveAbilityScaling(
         rangeScalesWithSpirit,
         durationScalesWithSpirit,
         scalesWithSpirit: damageScalePerSpirit > 0 || rangeScalesWithSpirit || durationScalesWithSpirit,
-        executePct: flags.executePct,
-        executeKind: flags.executeKind,
     };
+}
+
+/**
+ * Resolve an ability's execute / assassinate threshold — the enemy-HP-% marker some
+ * abilities carry (e.g. a finisher that kills below 8% HP, or a bonus-damage window
+ * below 30%). Parsed from the ability's `properties` JSON (`executePct`/`executeKind`),
+ * this is distinct from Spirit scaling, so it lives in its own accessor rather than
+ * riding `deriveAbilityScaling`. Returns `null` when the ability has no execute.
+ */
+export function abilityExecute(a: Pick<AbilityData, "properties">): AbilityExecute | null {
+    let flags: AbilityScaling = {};
+    if (a.properties) {
+        try {
+            flags = JSON.parse(a.properties) as AbilityScaling;
+        } catch { /* malformed — ignore */ }
+    }
+    if (flags.executePct == null) return null;
+    return { pct: flags.executePct, kind: flags.executeKind ?? "bonus" };
 }
 
 /** Resolve an ability's effective stats at a trained rank from its precomputed rank
@@ -324,7 +348,7 @@ function conditionalWeaponMult(
 ): number {
     const sumItemWeaponPct = investmentWeaponPct + sumPercentModifiers(items, "bulletDamage");
     const condPct = effects
-        .filter((e) => e.kind === "conditionalWeaponPct")
+        .filter((e): e is ConditionalWeaponPctEffect => e.kind === "conditionalWeaponPct")
         .reduce((s, e) => {
             const okMin = e.rangeMin == null || range >= e.rangeMin;
             const okMax = e.rangeMax == null || range <= e.rangeMax;
@@ -349,7 +373,7 @@ const HEADSHOT_MULT = 1.65;
  */
 function conditionalFireRateMult(items: ItemData[], effects: ItemEffect[]): number {
     const delta = effects
-        .filter((e) => e.kind === "conditionalFireRate")
+        .filter((e): e is ConditionalFireRateEffect => e.kind === "conditionalFireRate")
         .reduce((s, e) => s + (e.value - (e.baseValue ?? 0)), 0);
     if (delta === 0) return 1;
     const baseSum = sumPercentModifiers(items, "weaponFireRate");
@@ -388,7 +412,7 @@ function computeBurst(
 
     const hs = Math.min(headshots, shots);
     const headshotFlat = effects
-        .filter((e) => e.condition === "headshot" && e.damageType === "weapon")
+        .filter((e) => e.kind === "onHitFlat" && e.condition === "headshot" && e.damageType === "weapon")
         .reduce((s, e) => s + e.value, 0);
     // A headshot does the base 1.65× weapon multiplier (inherent to all weapons), plus any
     // flat headshot bonuses (Headshot Booster). The bonus over a body shot is therefore
@@ -403,7 +427,7 @@ function computeBurst(
     const spirit = heroStats.spiritPower ?? 0;
     const procs: BurstResult["procs"] = [];
     let procDamage = 0;
-    for (const e of effects.filter((e) => e.kind === "onHitProc")) {
+    for (const e of effects.filter((e): e is OnHitProcEffect => e.kind === "onHitProc")) {
         const c = e.procCooldown ?? 1;
         const count = c <= 0 ? shots : Math.max(1, Math.min(shots, Math.floor(burstDuration / c) + 1));
         const per =
@@ -422,8 +446,8 @@ function computeBurst(
     // burst (excludedActiveItemIds); passive charge-up procs (Tankbuster) are `alwaysOn` and
     // ignore both the gate and the exclusion.
     const excludedActives = new Set(opts.excludedActiveItemIds ?? []);
-    for (const e of effects.filter((e) => e.kind === "activeDamage"
-        && (e.alwaysOn || (opts.activesFiring && !(e.itemId != null && excludedActives.has(e.itemId)))))) {
+    for (const e of effects.filter((e): e is ActiveDamageEffect => e.kind === "activeDamage"
+        && !!(e.alwaysOn || (opts.activesFiring && !(e.itemId != null && excludedActives.has(e.itemId)))))) {
         const raw = e.value + spirit * (e.spiritScale ?? 0) + (targetStats.maxHealth ?? 0) * ((e.healthPctDamage ?? 0) / 100);
         const res = e.ignoreResist ? 1 : e.damageType === "spirit" ? spiritRes : bulletRes;
         const dmg = raw * res;
@@ -452,7 +476,7 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
     const itemEffects = items.map((it) => ({ it, effects: parseEffects(it.effects) }));
     // Flattened view, each effect tagged with its source item id so burst inclusion can be
     // refined per item (excludedActiveItemIds — which actives the player pressed this combo).
-    const effects = itemEffects.flatMap((x) => x.effects.map((e) => ({ ...e, itemId: x.it.id })));
+    const effects: ItemEffect[] = itemEffects.flatMap((x) => x.effects.map((e) => ({ ...e, itemId: x.it.id })));
     const disabled = new Set(opts.disabledAbilityIds ?? []);
 
     const soulsSpent = items.reduce((sum, it) => sum + (it.soulCost ?? 0), 0);
@@ -469,21 +493,25 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
     // item's own max when unset. Spirit power is a flat add; weapon damage / fire rate are %.
     const stackMods: StatModifier[] = itemEffects.flatMap(({ it, effects: effs }) =>
         effs
-            .filter((e) => e.kind === "stacking" && e.stat)
-            .map((e) => {
+            .filter((e): e is StackingEffect => e.kind === "stacking")
+            .flatMap((e) => {
+                const stat = e.stat;
+                if (!stat) return [];
                 const max = e.maxStacks ?? 0;
                 const n = Math.min(opts.stacksByItem?.[it.id] ?? max, max);
                 const amt = n * e.value;
-                const flat = FLAT_STACK_STATS.has(e.stat as string);
-                return { statName: e.stat as string, flatBonus: flat ? amt : 0, percentBonus: flat ? 0 : amt };
+                const flat = FLAT_STACK_STATS.has(stat);
+                return [{ statName: stat, flatBonus: flat ? amt : 0, percentBonus: flat ? 0 : amt }];
             })
     );
     // Active items' on-cast self-buffs apply only while "Actives firing" is on.
-    const activeBuffMods: StatModifier[] = (opts.activesFiring ? effects.filter((e) => e.kind === "activeBuff" && e.stat) : [])
-        .map((e) => {
-            const flat = FLAT_STACK_STATS.has(e.stat as string);
-            return { statName: e.stat as string, flatBonus: flat ? e.value : 0, percentBonus: flat ? 0 : e.value };
-        });
+    const activeBuffMods: StatModifier[] = (opts.activesFiring
+        ? effects.filter((e): e is ActiveBuffEffect => e.kind === "activeBuff" && !!e.stat)
+        : []
+    ).map((e) => {
+        const flat = FLAT_STACK_STATS.has(e.stat);
+        return { statName: e.stat, flatBonus: flat ? e.value : 0, percentBonus: flat ? 0 : e.value };
+    });
     const heroStats = calculateStats(applyLevel(hero, level), [...items, { modifiers: inv.mods }, { modifiers: stackMods }, { modifiers: activeBuffMods }]);
 
     // Target builds its own loadout: its souls drive its level, and its items +
@@ -504,7 +532,9 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
     // negative (damage amplification), which the mitigation factors handle naturally.
     if (opts.resistDebuffs) {
         const reduce = (dt: "weapon" | "spirit") =>
-            effects.filter((e) => e.kind === "targetResistReduction" && e.damageType === dt).reduce((s, e) => s + e.value, 0);
+            effects
+                .filter((e): e is TargetResistReductionEffect => e.kind === "targetResistReduction" && e.damageType === dt)
+                .reduce((s, e) => s + e.value, 0);
         const rb = reduce("weapon");
         const rs = reduce("spirit");
         if (rb) targetStats.bulletResist = (targetStats.bulletResist ?? 0) - rb;
@@ -523,7 +553,7 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
     const fireRate = heroStats.weaponFireRate ?? 0;
     const spiritPower = heroStats.spiritPower ?? 0;
     let procDps = 0;
-    for (const e of effects.filter((e) => e.kind === "onHitProc")) {
+    for (const e of effects.filter((e): e is OnHitProcEffect => e.kind === "onHitProc")) {
         const per =
             e.valueType === "percentOfShot"
                 ? damagePerShot * (e.value / 100)
@@ -538,7 +568,7 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
     // 1.65× crit bonus (+ flat headshot items), scaled by the target's crit resistance.
     const hsFrac = Math.max(0, Math.min(100, opts.headshotPct ?? 0)) / 100;
     const flatHeadshot = effects
-        .filter((e) => e.condition === "headshot" && e.damageType === "weapon")
+        .filter((e) => e.kind === "onHitFlat" && e.condition === "headshot" && e.damageType === "weapon")
         .reduce((s, e) => s + e.value, 0);
     const critScale = target.hero.critDamageReceivedScale ?? 1;
     const hsBonusPerShot = (damagePerShot * (HEADSHOT_MULT - 1) + flatHeadshot * combat.falloffMultiplier * bulletResFactor) * critScale;
@@ -569,12 +599,15 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
     // on-hit spirit procs (Mystic Shot). Listed regardless of the scenario toggles — it's
     // a build property — at the current Spirit, mitigated by the target's spirit resist.
     const spiritItemDamage = effects
-        .filter((e) => (e.kind === "activeDamage" || e.kind === "onHitProc") && e.damageType === "spirit")
+        .filter((e): e is ActiveDamageEffect | OnHitProcEffect =>
+            (e.kind === "activeDamage" || e.kind === "onHitProc") && e.damageType === "spirit")
         .map((e) => {
-            const raw = e.value + spiritPower * (e.spiritScale ?? 0) + (targetStats.maxHealth ?? 0) * ((e.healthPctDamage ?? 0) / 100);
+            const healthPctDamage = e.kind === "activeDamage" ? e.healthPctDamage ?? 0 : 0;
+            const ignoreResist = e.kind === "activeDamage" ? e.ignoreResist : false;
+            const raw = e.value + spiritPower * (e.spiritScale ?? 0) + (targetStats.maxHealth ?? 0) * (healthPctDamage / 100);
             return {
                 name: (e.itemName ?? "").split(":")[0],
-                value: raw * (e.ignoreResist ? 1 : spiritResFactor),
+                value: raw * (ignoreResist ? 1 : spiritResFactor),
                 perProc: e.kind === "onHitProc",
             };
         });

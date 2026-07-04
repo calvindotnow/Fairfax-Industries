@@ -1,6 +1,6 @@
 import { test, expect, describe } from "bun:test";
 import { db } from "../../db";
-import { simulate, levelFromSouls, investmentBonus, parseEffects } from "./index";
+import { simulate, levelFromSouls, investmentBonus, parseEffects, abilityExecute } from "./index";
 import type { HeroWithAbilities, ItemData } from "./index";
 
 // Real game data (DB is populated by the deadlock-api sync).
@@ -279,5 +279,44 @@ describe("engine depth (R-4)", () => {
         expect(perBoon).toBeCloseTo(1.58, 1);
         // heavy and light scale by the same factor → ratio constant across levels
         expect(lvlN.melee.heavy / lvlN.melee.light).toBeCloseTo(lvl1.melee.heavy / lvl1.melee.light, 5);
+    });
+});
+
+describe("abilityExecute (execute-threshold accessor)", () => {
+    test("returns null when the ability has no properties / no execute", () => {
+        expect(abilityExecute({ properties: null })).toBeNull();
+        expect(abilityExecute({ properties: undefined })).toBeNull();
+        expect(abilityExecute({ properties: "{}" })).toBeNull();
+        expect(abilityExecute({ properties: JSON.stringify({ rangeScalesWithSpirit: true }) })).toBeNull();
+    });
+
+    test("returns null on malformed JSON", () => {
+        expect(abilityExecute({ properties: "not json" })).toBeNull();
+    });
+
+    test("reads pct + kind from the properties JSON", () => {
+        expect(abilityExecute({ properties: JSON.stringify({ executePct: 8, executeKind: "kill" }) }))
+            .toEqual({ pct: 8, kind: "kill" });
+        expect(abilityExecute({ properties: JSON.stringify({ executePct: 30, executeKind: "bonus" }) }))
+            .toEqual({ pct: 30, kind: "bonus" });
+    });
+
+    test("defaults kind to 'bonus' when only executePct is present", () => {
+        expect(abilityExecute({ properties: JSON.stringify({ executePct: 50 }) }))
+            .toEqual({ pct: 50, kind: "bonus" });
+    });
+
+    test("resolves execute data for a real execute hero from the baked data", () => {
+        // Some hero in the live pool carries an execute threshold; find it and confirm the
+        // accessor surfaces the same pct the sync baked into `properties`.
+        const withExecute = heroes
+            .flatMap((h) => h.abilities)
+            .map((a) => abilityExecute(a))
+            .filter((x): x is NonNullable<typeof x> => x != null);
+        expect(withExecute.length).toBeGreaterThan(0);
+        for (const ex of withExecute) {
+            expect(ex.pct).toBeGreaterThan(0);
+            expect(["kill", "bonus"]).toContain(ex.kind);
+        }
     });
 });

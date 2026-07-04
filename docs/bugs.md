@@ -26,13 +26,15 @@ Scope limits, not bugs — surfaced on `/methodology`. Tightening them is "deepe
 
 Flagged by the pre-launch review; deliberately deferred to avoid launch-eve churn.
 
-- **`ItemEffect` is a grab-bag union** — one interface with many optional fields (`stat`, `maxStacks`, `baseValue`, `spiritScale`, …) across 8 kinds. *Fix idea:* split into a discriminated union per kind so each shape is explicit. (`src/lib/sim/types.ts`)
-- **Execute-threshold data rides in `deriveAbilityScaling`** — a "scaling" helper also returns execute info (co-located in the ability `properties` blob). *Fix idea:* a dedicated `abilityExecute()` accessor or a first-class column. (`src/lib/sim/engine.ts`)
 - **Ability damage detection uses a css_class match + a `NON_DAMAGE` name blocklist** — pragmatic (the API has no clean damage flag and damage lives in ~90 property names), but the blocklist needs eyes when a patch adds new property names. (`scripts/sync-deadlock-api.ts`)
 
 ---
 
-*Resolved (for reference): **share-code patch drift** (closed 2026-07-04 — VERSION 3 codes embed a
+*Resolved (for reference): **the `ItemEffect` grab-bag + execute-data debt** (closed 2026-07-04 —
+`ItemEffect` is now a discriminated union of 9 per-kind interfaces, each carrying only its own
+fields, all consumers narrowing on `kind`; execute-threshold data moved off `deriveAbilityScaling`
+into a dedicated `abilityExecute(ability)` accessor with locking tests — behavior- and
+data-preserving), **share-code patch drift** (closed 2026-07-04 — VERSION 3 codes embed a
 2-byte FNV-1a fingerprint of the sorted item-name pool; `decodeBuildMeta` in `src/lib/build-code.ts`
 exposes a `poolMismatch` flag and `/b/<code>`, `/hideout`, `/lane` render an "older patch" notice;
 V1/V2 legacy codes still decode, treated as unknown-provenance and never flagged),
