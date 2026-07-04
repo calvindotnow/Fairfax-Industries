@@ -286,10 +286,17 @@ function MiniStat({ label, value, color, align = "right", tip }: { label: string
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const open = () => { timer.current = setTimeout(() => setShow(true), 350); };
     const close = () => { if (timer.current) clearTimeout(timer.current); setShow(false); };
+    // Keyboard focus opens the tip immediately (no hover-intent delay — a tab
+    // stop is a deliberate action already) and blur closes it, so the same
+    // tooltip content hover exposes is reachable without a mouse.
+    const openNow = () => setShow(true);
     return (
         <div
+            {...(tip ? { tabIndex: 0, role: "note", "aria-label": `${label}: ${value}. ${tip}` } : {})}
             onMouseEnter={tip ? open : undefined}
             onMouseLeave={tip ? close : undefined}
+            onFocus={tip ? openNow : undefined}
+            onBlur={tip ? close : undefined}
             style={{ position: "relative", display: "flex", flexDirection: "column", gap: 2, alignItems: align === "right" ? "flex-end" : "flex-start", cursor: tip ? "help" : "default" }}>
             <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 18, color }}>{value}</span>
             <span style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)", borderBottom: tip ? "1px dotted var(--border-strong)" : "none", paddingBottom: tip ? 1 : 0 }}>{label}</span>

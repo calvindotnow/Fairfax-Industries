@@ -97,7 +97,7 @@
   /* Paper scale */
   --paper-50:  #e9e5dc;
   --paper-400: #918c81;
-  --paper-500: #88837a; /* raised from #75716a → ~4.66:1 on --background (WCAG AA) */
+  --paper-500: #8f8a81; /* raised from #75716a → #88837a → #8f8a81: ~4.55:1 on the dimmest real surface (--surface-raised); still dimmer than --paper-400 (WCAG AA) */
 
   /* Brass */
   --brass-200: #f0d8ab;
@@ -117,7 +117,7 @@
   --parch-line:     #9a8254;
   --parch-frame:    #4a3d24;
   --parch-ink:      #2c2316;
-  --parch-ink-soft: #6a5634;
+  --parch-ink-soft: #4a3c24; /* darkened from #6a5634 → ~4.6:1+ on parchment surfaces (was ~3–4.3:1, failed AA) */
 
   /* Cash/souls */
   --cash-500:      #6fae5e;
@@ -144,7 +144,7 @@
   --spirit-tint:   rgba(155,138,214,0.14);
   --spirit-frame:  rgba(155,138,214,0.45);
 
-  --danger-500:    #c5503e;
+  --danger-500:    #d96452; /* lightened from #c5503e → ~4.6–4.9:1 as text on --surface/--background/tooltip gradient (was ~3.6–3.8:1, failed AA) */
 
   /* Hairlines */
   --line:        rgba(233,229,220,0.10);
@@ -275,6 +275,17 @@ select option {
 
 input[type="range"] {
   accent-color: var(--primary);
+}
+
+/* ─── Focus visibility ─────────────────────────────────────────────────────── */
+/* A single global focus-visible ring (in --ring, the brass accent) so every
+   interactive control — including ones that set outline:none for a custom hover/
+   press look (shop tiles, number/search inputs) — still gets a visible keyboard
+   focus indicator. Only fires for keyboard/programmatic focus, never mouse clicks. */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
 }
 
 /* ─── Motion ───────────────────────────────────────────────────────────────── */

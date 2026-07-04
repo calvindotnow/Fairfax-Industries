@@ -326,9 +326,9 @@ export default function DamageCalculator({ heroes, items, initialHeroId = null, 
                 {/* Damage calculator */}
                 <div data-tour="damage" style={{ padding: 18, borderLeft: narrow ? "none" : "1px solid var(--border)", borderTop: narrow ? "1px solid var(--border)" : "none" }}>
                     <OverviewTabs active={overviewTab} onChange={setOverviewTab} />
-                    {overviewTab === "vitality" && <VitalityPanel hs={hs} hero={hero} meleeResist={equippedMeleeResist} critReductionPct={critReductionPct} fmt={fmt} />}
-                    {overviewTab === "spirit" && <SpiritPanel hs={hs} abilities={result.abilities} itemDamage={result.spiritItemDamage} fmt={fmt} />}
-                    {overviewTab === "damage" && (<>
+                    {overviewTab === "vitality" && <div role="tabpanel" id="overview-panel-vitality" aria-labelledby="overview-tab-vitality"><VitalityPanel hs={hs} hero={hero} meleeResist={equippedMeleeResist} critReductionPct={critReductionPct} fmt={fmt} /></div>}
+                    {overviewTab === "spirit" && <div role="tabpanel" id="overview-panel-spirit" aria-labelledby="overview-tab-spirit"><SpiritPanel hs={hs} abilities={result.abilities} itemDamage={result.spiritItemDamage} fmt={fmt} /></div>}
+                    {overviewTab === "damage" && (<div role="tabpanel" id="overview-panel-damage" aria-labelledby="overview-tab-damage">
                     {(() => { const RMAX = 50; const pct = (m: number) => `${Math.min(100, (m / RMAX) * 100)}%`; return (
                     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
                         <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)", whiteSpace: "nowrap" }}>Range</span>
@@ -461,7 +461,7 @@ export default function DamageCalculator({ heroes, items, initialHeroId = null, 
                             </div>
                         )}
                     </div>
-                    </>)}
+                    </div>)}
                 </div>
             </div>
 
@@ -656,12 +656,21 @@ function OverviewTabs({ active, onChange }: { active: "damage" | "vitality" | "s
     ] as const;
     const { containerRef, setRef, box } = useTabIndicator(active);
     const activeColor = tabs.find(([k]) => k === active)?.[2] ?? "var(--brass-300)";
+    // Left/Right (and Home/End) move selection between tabs, per the ARIA tabs pattern.
+    const onKeyDown = (e: React.KeyboardEvent, i: number) => {
+        const dir = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : e.key === "Home" ? -tabs.length : e.key === "End" ? tabs.length : 0;
+        if (!dir) return;
+        e.preventDefault();
+        const next = ((i + dir) % tabs.length + tabs.length) % tabs.length;
+        onChange(tabs[next][0]);
+    };
     return (
-        <div ref={containerRef} style={{ position: "relative", display: "flex", gap: 2, marginBottom: 14, borderBottom: "1px solid var(--border)" }}>
-            {tabs.map(([key, label, color]) => {
+        <div ref={containerRef} role="tablist" aria-label="Build overview" style={{ position: "relative", display: "flex", gap: 2, marginBottom: 14, borderBottom: "1px solid var(--border)" }}>
+            {tabs.map(([key, label, color], i) => {
                 const on = active === key;
                 return (
-                    <button key={key} ref={setRef(key)} type="button" onClick={() => onChange(key)} aria-pressed={on}
+                    <button key={key} ref={setRef(key)} type="button" role="tab" aria-selected={on} id={`overview-tab-${key}`} aria-controls={`overview-panel-${key}`}
+                        tabIndex={on ? 0 : -1} onClick={() => onChange(key)} onKeyDown={(e) => onKeyDown(e, i)}
                         style={{ padding: "7px 14px", cursor: "pointer", background: "transparent", border: "none",
                             fontFamily: "var(--font-oswald)", fontWeight: 600, fontSize: 14, letterSpacing: "0.06em", textTransform: "uppercase",
                             color: on ? color : "var(--text-dim)", transition: "color var(--motion-fast)" }}>

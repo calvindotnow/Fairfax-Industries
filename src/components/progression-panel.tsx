@@ -40,8 +40,11 @@ export function ProgressionPanel({ steps, checkpoint, onCheckpoint, onMove, prev
                             const dimmed = checkpoint != null && i > checkpoint;
                             const c = CAT[it.category] ?? "var(--text)";
                             return (
-                                <div key={i} role="button" aria-pressed={isCp} title="Preview the build at this step"
+                                <div key={i} role="button" tabIndex={0} aria-pressed={isCp}
+                                    aria-label={`${it.name} — step ${i + 1}${isCp ? ", currently previewing" : ""}`}
+                                    title="Preview the build at this step"
                                     onClick={() => onCheckpoint(isCp ? null : i)}
+                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onCheckpoint(isCp ? null : i); } }}
                                     style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: "var(--r-sm)", cursor: "pointer", opacity: dimmed ? 0.45 : 1,
                                         border: `1px solid ${isCp ? "var(--border-brass)" : "var(--border)"}`,
                                         background: isCp ? "color-mix(in srgb, var(--brass-500) 10%, transparent)" : owned ? "var(--surface-raised)" : "transparent" }}>

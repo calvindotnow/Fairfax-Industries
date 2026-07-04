@@ -152,7 +152,10 @@ export default function BuyMenu({ items, loadout, onAdd, onRemove, buyingFor, on
                 <span title="Deadlock allows up to 4 active items per build"
                     style={{ marginLeft: "auto", alignSelf: "center", display: "inline-flex", alignItems: "center", gap: 5, padding: "0 9px", height: 26, borderRadius: "var(--r-sm)",
                         fontFamily: "var(--font-oswald)", fontWeight: 600, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase",
-                        color: atActiveCap ? "var(--weapon-500)" : "var(--parch-ink-soft)",
+                        /* Text stays --parch-ink (dark) for AA contrast on parchment even when at cap —
+                           --weapon-500 reads ~1.4:1 here and fails badly. The warning is carried by the
+                           weapon-toned border + tint background instead, not by the text color. */
+                        color: atActiveCap ? "var(--parch-ink)" : "var(--parch-ink-soft)",
                         border: `1px solid ${atActiveCap ? "var(--weapon-500)" : "var(--parch-line)"}`,
                         background: atActiveCap ? "color-mix(in srgb, var(--weapon-500) 12%, transparent)" : "transparent" }}>
                     Actives <span style={{ fontFamily: "var(--font-numeric)" }}>{activeCount}/{ACTIVE_CAP}</span>
