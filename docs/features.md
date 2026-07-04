@@ -56,7 +56,7 @@ clean, portable, test-covered module.
 - **Item browser** — `/items`, searchable by name **and** description, with proc spirit-scaling shown in tooltips.
 - **Methodology** — `/methodology` + per-result "how this is calculated" disclosures.
 - **Patch notes** — `/patch-notes` diffs the two most recent stat snapshots; a "Data synced · <date>" badge in the footer.
-- **Shareable builds** — stateless `?b=` codes (VERSION 2, legacy decodes) and crawlable `/b/<code>` pages with metadata.
+- **Shareable builds** — stateless `?b=` codes (VERSION 2, legacy decodes) and crawlable `/b/<code>` pages with metadata, plus a **dynamic Open Graph image** (hero-vs-hero + headline numbers, hard-cached) so build links unfurl in Discord (`src/app/b/[code]/opengraph-image.tsx`).
 
 ### Data + delivery (host-agnostic)
 - Data is **synced from deadlock-api.com** and **baked into the build** (`src/lib/baked-data.json`) — **no runtime database**, so the app deploys to any static/serverless host (Cloudflare, Vercel, a Node/Bun server). Most pages are static HTML.
@@ -67,7 +67,8 @@ clean, portable, test-covered module.
 
 ## What we're working towards (next)
 
-- 🟠 **Rich link previews** — `/b/<code>` has metadata but no dynamic Open Graph *image*; add an `opengraph-image` (hero-vs-hero + headline numbers) so build links unfurl in Discord. Highest-leverage virality win post-launch.
+> Agent-ready breakdown of everything below (tracks, files, acceptance, dispatch order): [superpowers/plans/2026-07-04-open-upgrades-agent-handoff.md](superpowers/plans/2026-07-04-open-upgrades-agent-handoff.md).
+
 - 🟠 **Deeper engine** — remaining mechanics: tier *behaviors* beyond stat deltas (Shiv's Slice and Dice double-hit at max); recompute imbued ability numbers and Spirit-scaled range/duration; %-of-health *ability* damage (Vyper missing-health, etc.); and the stacking stats still display-only (Escalating Exposure, Restorative Locket). *(Done: ability ranks 0–3 apply tier upgrades to damage/range/duration/charges/cooldown; active items' direct damage — Arctic Blast, Cold Front — folded into burst while "Actives firing", each toggleable in/out per item; ability bleed/per-stack DoTs — Shiv's Serrated Knives — tracked over their full duration; Tankbuster current-health damage shown at full health; Spirit panel lists Spirit-scaling item damage.)*
 - 🟡 **Accessibility pass** — finish the contrast audit (`--text-dim`/`--text-muted`) and full keyboard/screen-reader coverage.
 - 🟡 **Internal refactors** (no user impact) — tracked as debt in [bugs.md](bugs.md): split the `ItemEffect` grab-bag into a discriminated union; move execute-threshold data out of `deriveAbilityScaling` into its own accessor.
