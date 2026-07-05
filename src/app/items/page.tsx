@@ -1,8 +1,20 @@
 import ItemBrowser from "./item-browser";
+import ItemRankings, { type RankedItemRow } from "./item-rankings";
 import { getItems } from "@/lib/data";
+import { getItemAggregates, getAggregatesSyncedAt } from "@/lib/aggregates";
+
+const AGG_PARAMS = { minAverageBadge: 80, itemMinMatches: 200, windowDays: 30 };
 
 export default async function ItemsPage() {
   const items = getItems();
+  const itemsById = new Map(items.map((i) => [i.id, i]));
+  const rankedRows: RankedItemRow[] = getItemAggregates()
+    .map((agg) => {
+      const item = itemsById.get(agg.itemId);
+      return item ? { item, agg } : null;
+    })
+    .filter((r): r is RankedItemRow => r !== null);
+  const syncedAt = getAggregatesSyncedAt();
 
   return (
     <div className="space-y-10">
@@ -16,6 +28,12 @@ export default async function ItemsPage() {
           name — every stat is the cumulative total at that tier.
         </p>
       </section>
+
+      <ItemRankings
+        rows={rankedRows}
+        syncedAt={syncedAt ? syncedAt.toISOString() : null}
+        params={AGG_PARAMS}
+      />
 
       <ItemBrowser items={items} />
     </div>

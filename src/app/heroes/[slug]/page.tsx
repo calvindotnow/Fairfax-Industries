@@ -5,6 +5,10 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import { heroSlug } from "@/lib/slug";
 import { deriveAbilityScaling } from "@/lib/sim";
 import { getHeroes } from "@/lib/data";
+import { getAbilityOrderStats, getAggregatesSyncedAt } from "@/lib/aggregates";
+import AbilityOrders from "./ability-orders";
+
+const AGG_PARAMS = { abilityOrderMinMatches: 50, windowDays: 30 };
 
 const fmt = (n: number) => (Number.isInteger(n) ? n.toLocaleString() : n.toFixed(1));
 
@@ -28,6 +32,9 @@ export default async function HeroDetailPage({
     (Number.isFinite(numericId) ? roster.find((h) => h.id === numericId) : undefined);
 
   if (!hero) notFound();
+
+  const abilityOrders = getAbilityOrderStats(hero.id);
+  const aggSyncedAt = getAggregatesSyncedAt();
 
   const stats: { label: string; value: string }[] = [
     { label: "Health", value: fmt(hero.maxHealth) },
@@ -235,6 +242,13 @@ export default async function HeroDetailPage({
           </div>
         )}
       </section>
+
+      <AbilityOrders
+        orders={abilityOrders}
+        abilities={hero.abilities}
+        syncedAt={aggSyncedAt ? aggSyncedAt.toISOString() : null}
+        params={AGG_PARAMS}
+      />
     </div>
   );
 }
