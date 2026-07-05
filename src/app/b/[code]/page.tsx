@@ -79,7 +79,8 @@ export default async function SharedBuildPage({ params }: { params: Promise<{ co
 
             <p className="text-sm text-muted-foreground">
                 Numbers from the Fairfax damage engine. See{" "}
-                <Link href="/methodology" className="text-foreground underline-offset-2 hover:underline">how this is calculated</Link>.
+                <Link href="/methodology" className="text-foreground underline-offset-2 hover:underline">how this is calculated</Link>{" · "}
+                <Link href={`/patch-notes?b=${code}`} className="text-foreground underline-offset-2 hover:underline">how did the latest patch change this build?</Link>
             </p>
         </div>
     );

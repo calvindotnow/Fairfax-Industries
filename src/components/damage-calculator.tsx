@@ -185,7 +185,9 @@ export default function DamageCalculator({ heroes, items, initialHeroId = null, 
         return <p style={{ color: "var(--text-muted)" }}>No hero data available.</p>;
     }
 
-    const laneHref = `/lane?b=${encodeBuild({ heroId, targetId, loadout, targetLoadout, range, shots, headshots, matchTargetLevel }, heroes, items)}`;
+    const buildCode = encodeBuild({ heroId, targetId, loadout, targetLoadout, range, shots, headshots, matchTargetLevel }, heroes, items);
+    const laneHref = `/lane?b=${buildCode}`;
+    const patchHref = `/patch-notes?b=${buildCode}`;
 
     const hs = result.heroStats;
     const b = result.burst;
@@ -199,8 +201,9 @@ export default function DamageCalculator({ heroes, items, initialHeroId = null, 
             {/* VersusBand */}
             <VersusBand build={build} narrow={narrow} fmt={fmt} heroes={heroes} />
 
-            {/* Transfer link — open current build in the Lane Matchup surface */}
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            {/* Transfer links — open current build in Lane Matchup / see this patch's impact on it */}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 16, flexWrap: "wrap" }}>
+                <Link href={patchHref} style={{ fontSize: 12.5, color: "var(--text-muted)", textDecoration: "none", fontWeight: 500 }}>How did the patch change this build? →</Link>
                 <Link href={laneHref} style={{ fontSize: 12.5, color: "var(--text-muted)", textDecoration: "none", fontWeight: 500 }}>Open in Lane Matchup →</Link>
             </div>
 
