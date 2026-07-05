@@ -56,7 +56,14 @@ clean, portable, test-covered module.
 - **Item browser** — `/items`, searchable by name **and** description, with proc spirit-scaling shown in tooltips.
 - **Methodology** — `/methodology` + per-result "how this is calculated" disclosures.
 - **Patch notes** — `/patch-notes` diffs the two most recent stat snapshots; a "Data synced · <date>" badge in the footer.
-- **Shareable builds** — stateless `?b=` codes (VERSION 2, legacy decodes) and crawlable `/b/<code>` pages with metadata, plus a **dynamic Open Graph image** (hero-vs-hero + headline numbers, hard-cached) so build links unfurl in Discord (`src/app/b/[code]/opengraph-image.tsx`).
+- **Shareable builds** — stateless `?b=` codes (VERSION 3: a 2-byte pool fingerprint detects patch drift and `/b`, `/hideout`, `/lane` warn on stale links; V1/V2 still decode) and crawlable `/b/<code>` pages with metadata, plus a **dynamic Open Graph image** (hero-vs-hero + headline numbers, hard-cached) so build links unfurl in Discord (`src/app/b/[code]/opengraph-image.tsx`).
+- **Two-axis item ranking** — "What people build" on `/items`: most-picked vs highest-winrate (top 10, global aggregates with explicit not-hero-specific provenance and per-row sample sizes). (`src/app/items/item-rankings.tsx`)
+- **Ability-order win rates** — "Which skill order wins" on `/heroes/<slug>`: top level-up orders as icon sequences with winrate + matches. (`src/app/heroes/[slug]/ability-orders.tsx`)
+- **Patch impact on *your* build** — `/patch-notes?b=<code>` shows exactly which of the build's inputs the patch changed (old→new, per side), with an explicit no-fabricated-numbers disclosure (snapshots are too thin for an honest re-sim); linked from `/hideout` and `/b/<code>`. (`src/lib/build-patch-impact.ts`)
+
+### Lane Lab v2
+- **Auto-progressing average enemy** — on `/lane`, the enemy auto-fills its empirical build path (from `item-flow-stats` `avg_net_worth_at_buy`) at your mirrored soul count and advances with the progression scrubber; any manual enemy edit takes control one-way; auto-off is byte-identical to hand-built mode; heroes without data show a disabled toggle, never fabricated items.
+- **Planned-vs-average overlay** — the progression panel overlays the aggregate average path (dim ⌀ markers) against your planned purchases, labeled "an empirical average, not a prescription."
 
 ### Data + delivery (host-agnostic)
 - Data is **synced from deadlock-api.com** and **baked into the build** (`src/lib/baked-data.json`) — **no runtime database**, so the app deploys to any static/serverless host (Cloudflare, Vercel, a Node/Bun server). Most pages are static HTML.
@@ -69,16 +76,15 @@ clean, portable, test-covered module.
 
 > Agent-ready breakdown of everything below (tracks, files, acceptance, dispatch order): [superpowers/plans/2026-07-04-open-upgrades-agent-handoff.md](superpowers/plans/2026-07-04-open-upgrades-agent-handoff.md).
 
-- 🟠 **Deeper engine** — remaining mechanics: tier *behaviors* beyond stat deltas (Shiv's Slice and Dice double-hit at max); recompute imbued ability numbers and Spirit-scaled range/duration; %-of-health *ability* damage (Vyper missing-health, etc.); and the stacking stats still display-only (Escalating Exposure, Restorative Locket). *(Done: ability ranks 0–3 apply tier upgrades to damage/range/duration/charges/cooldown; active items' direct damage — Arctic Blast, Cold Front — folded into burst while "Actives firing", each toggleable in/out per item; ability bleed/per-stack DoTs — Shiv's Serrated Knives — tracked over their full duration; Tankbuster current-health damage shown at full health; Spirit panel lists Spirit-scaling item damage.)*
-- 🟡 **Accessibility pass** — finish the contrast audit (`--text-dim`/`--text-muted`) and full keyboard/screen-reader coverage.
-- 🟡 **Internal refactors** (no user impact) — tracked as debt in [bugs.md](bugs.md): split the `ItemEffect` grab-bag into a discriminated union; move execute-threshold data out of `deriveAbilityScaling` into its own accessor.
+*(The 2026-07-04 agent sweep shipped the deeper-engine mechanics — stacking amps, %-of-health at full HP, imbue recompute, tier-behavior infrastructure — plus the accessibility pass and the internal refactors. What honestly remains, per [bugs.md](bugs.md): Vyper's ramp-style damage shows the ramp top-end; the curated tier-behavior table is empty because the canonical "Slice and Dice doubles" claim proved false; Spirit-scaled range/duration stays a tag — no coefficient exists in any data source.)*
+
+- 🟡 **Discovery surfaces on `/items`** — Hidden Gems (high-win / rarely-built) now; Risers/Droppers light up automatically once the daily sync accumulates aggregate history. *(In flight.)*
 
 ## Potential new features (ideas, not commitments)
 
-- **Saved / shareable build library** — give builds real saved URLs (and optionally accounts / "my builds") on top of the stateless link sharing.
-- **Combo planner** — extend the execute math into a full "can you secure the kill?" sequencer (abilities + bullets to a threshold), and active-item combos.
+- **Combo planner** — spec'd 2026-07-04 with a **build-reduced** verdict (sequence/execute-window planner yes; wall-clock TTK no — cast-time data doesn't exist): [superpowers/specs/2026-07-04-combo-planner-design.md](superpowers/specs/2026-07-04-combo-planner-design.md). **Awaiting owner go-ahead.**
+- **Saved / shareable build library** — give builds real saved URLs (and optionally accounts / "my builds"). ⚠️ Requires an owner architecture decision first: accounts/backend conflicts with the locked stay-static constraint.
 - **Build guides** — curated or community theorycraft write-ups (parking lot — last, may never ship).
-- **Patch impact on *your* build** — leverage the snapshot history to show how a patch moved a specific build's numbers.
 
 ---
 
