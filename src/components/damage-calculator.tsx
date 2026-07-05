@@ -318,7 +318,7 @@ export default function DamageCalculator({ heroes, items, initialHeroId = null, 
                                     </div>
                                 );
                             })}
-                            <span style={{ fontSize: 10.5, color: "var(--text-dim)", lineHeight: 1.4 }}>Shown as applied to the ability. Ability numbers aren&apos;t recomputed yet — that&apos;s a later pass.</span>
+                            <span style={{ fontSize: 10.5, color: "var(--text-dim)", lineHeight: 1.4 }}>Assigning imbues the ability&apos;s damage/duration with this item&apos;s bonus — the ability row above updates live.</span>
                         </div>
                     )}
                 </div>
@@ -326,8 +326,8 @@ export default function DamageCalculator({ heroes, items, initialHeroId = null, 
                 {/* Damage calculator */}
                 <div data-tour="damage" style={{ padding: 18, borderLeft: narrow ? "none" : "1px solid var(--border)", borderTop: narrow ? "1px solid var(--border)" : "none" }}>
                     <OverviewTabs active={overviewTab} onChange={setOverviewTab} />
-                    {overviewTab === "vitality" && <div role="tabpanel" id="overview-panel-vitality" aria-labelledby="overview-tab-vitality"><VitalityPanel hs={hs} hero={hero} meleeResist={equippedMeleeResist} critReductionPct={critReductionPct} fmt={fmt} /></div>}
-                    {overviewTab === "spirit" && <div role="tabpanel" id="overview-panel-spirit" aria-labelledby="overview-tab-spirit"><SpiritPanel hs={hs} abilities={result.abilities} itemDamage={result.spiritItemDamage} fmt={fmt} /></div>}
+                    {overviewTab === "vitality" && <div role="tabpanel" id="overview-panel-vitality" aria-labelledby="overview-tab-vitality"><VitalityPanel hs={hs} hero={hero} meleeResist={equippedMeleeResist} critReductionPct={critReductionPct} fmt={fmt} heal={result.sustain.heal} /></div>}
+                    {overviewTab === "spirit" && <div role="tabpanel" id="overview-panel-spirit" aria-labelledby="overview-tab-spirit"><SpiritPanel hs={hs} abilities={result.abilities} itemDamage={result.spiritItemDamage} spiritAmpMult={result.spiritAmpMult} fmt={fmt} /></div>}
                     {overviewTab === "damage" && (<div role="tabpanel" id="overview-panel-damage" aria-labelledby="overview-tab-damage">
                     {(() => { const RMAX = 50; const pct = (m: number) => `${Math.min(100, (m / RMAX) * 100)}%`; return (
                     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
@@ -700,8 +700,8 @@ function OverviewStat({ label, value, unit, color, tip }: { label: string; value
 }
 
 // Survivability dashboard — the defensive side of the build.
-function VitalityPanel({ hs, hero, meleeResist, critReductionPct, fmt }: {
-    hs: Record<string, number>; hero: HeroWithAbilities; meleeResist: number; critReductionPct: (s: number | null | undefined) => number; fmt: (n: number) => string;
+function VitalityPanel({ hs, hero, meleeResist, critReductionPct, fmt, heal }: {
+    hs: Record<string, number>; hero: HeroWithAbilities; meleeResist: number; critReductionPct: (s: number | null | undefined) => number; fmt: (n: number) => string; heal: number;
 }) {
     const ehp = (resist: number) => (hs.maxHealth ?? 0) / Math.max(1 - resist / 100, 0.05);
     const headshotRed = critReductionPct(hero.critDamageReceivedScale);
@@ -722,6 +722,12 @@ function VitalityPanel({ hs, hero, meleeResist, critReductionPct, fmt }: {
                 <OverviewStat label="Sprint speed" value={(hs.sprintSpeed ?? 0).toFixed(1)} unit="m/s" />
                 {headshotRed !== 0 && <OverviewStat label="Headshot taken" value={`${headshotRed > 0 ? "−" : "+"}${Math.abs(headshotRed)}%`} tip="Crit/headshot damage you take, relative to normal." />}
             </div>
+            {heal > 0 && (
+                <div style={{ display: "inline-flex", alignSelf: "flex-start", alignItems: "center", gap: 6, padding: "7px 11px", borderRadius: "var(--r-sm)", background: "var(--vitality-tint)", border: "1px solid var(--vitality-frame)" }}>
+                    <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontWeight: 600, fontSize: 13, color: "var(--vitality-400)" }}>+{fmt(heal)} heal</span>
+                    <span style={{ fontSize: 11.5, color: "var(--text-dim)" }}>· Restorative Locket stacks</span>
+                </div>
+            )}
         </div>
     );
 }
@@ -752,7 +758,7 @@ function RankPips({ row, value, onChange }: { row: SimResult["abilities"][number
 }
 
 // Spirit power + ability-output summary.
-function SpiritPanel({ hs, abilities, itemDamage, fmt }: { hs: Record<string, number>; abilities: SimResult["abilities"]; itemDamage: SimResult["spiritItemDamage"]; fmt: (n: number) => string }) {
+function SpiritPanel({ hs, abilities, itemDamage, spiritAmpMult, fmt }: { hs: Record<string, number>; abilities: SimResult["abilities"]; itemDamage: SimResult["spiritItemDamage"]; spiritAmpMult: number; fmt: (n: number) => string }) {
     const spiritAbilities = abilities.filter((a) => a.damageType === "spirit");
     const totalBurst = spiritAbilities.reduce((s, a) => s + a.burstDamage, 0);
     const totalDot = spiritAbilities.reduce((s, a) => s + a.dotFull, 0);
@@ -763,6 +769,12 @@ function SpiritPanel({ hs, abilities, itemDamage, fmt }: { hs: Record<string, nu
                 <StatReadout label="Ability burst" value={fmt(Math.round(totalBurst))} tip="Combined instant damage of your spirit abilities at the current Spirit Power (ultimates off unless toggled)." />
                 {totalDot > 0 && <StatReadout label="DoT total" value={fmt(Math.round(totalDot))} tip="Total damage if the target sits in all your damage-over-time for its full duration." />}
             </div>
+            {spiritAmpMult > 1 && (
+                <div style={{ display: "inline-flex", alignSelf: "flex-start", alignItems: "center", gap: 6, padding: "7px 11px", borderRadius: "var(--r-sm)", background: "var(--spirit-tint)", border: "1px solid var(--spirit-frame)" }}>
+                    <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontWeight: 600, fontSize: 13, color: "var(--spirit-400)" }}>×{spiritAmpMult.toFixed(2)}</span>
+                    <span style={{ fontSize: 11.5, color: "var(--text-dim)" }}>Target takes spirit damage · Escalating Exposure stacks</span>
+                </div>
+            )}
             {spiritAbilities.length > 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {spiritAbilities.map((a) => (

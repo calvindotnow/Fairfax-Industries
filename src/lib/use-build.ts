@@ -115,14 +115,14 @@ export function useBuild({
     const targetEquipped = useMemo(() => targetLoadout.map((id) => items.find((i) => i.id === id)!).filter(Boolean), [targetLoadout, items]);
 
     // Both builds run against the same hero, target, and scenario.
-    const sharedSim = { hero, target, targetEquipped, matchTargetLevel, range, shots, headshots, accuracy, headshotPct, disabledAbilities, hittingEnemy, resistDebuffs, activesFiring, stacksByItem, abilityRanks, excludedActives };
+    const sharedSim = { hero, target, targetEquipped, matchTargetLevel, range, shots, headshots, accuracy, headshotPct, disabledAbilities, hittingEnemy, resistDebuffs, activesFiring, stacksByItem, abilityRanks, excludedActives, imbueAssign };
     const simAttacker = (atkItems: ItemWithModifiers[]) =>
         !hero || !target
             ? null
             : simulate(
                   { hero, items: atkItems },
                   { hero: target, items: targetEquipped, matchAttackerLevel: matchTargetLevel },
-                  { range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring, stacksByItem, accuracy, headshotPct, abilityRanks, excludedActiveItemIds: [...excludedActives] }
+                  { range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring, stacksByItem, accuracy, headshotPct, abilityRanks, excludedActiveItemIds: [...excludedActives], imbueAssign }
               );
     /* eslint-disable react-hooks/exhaustive-deps */
     const resultA = useMemo(() => simAttacker(equippedA), [equippedA, sharedSim]);
@@ -183,8 +183,9 @@ export function useBuild({
         hittingEnemy, resistDebuffs, activesFiring,
         stacksByItem, accuracy, headshotPct, abilityRanks,
         excludedActiveItemIds: [...excludedActives],
+        imbueAssign,
     }), [range, shots, headshots, hittingEnemy, resistDebuffs, activesFiring, accuracy, headshotPct,
-        disabledAbilities, stacksByItem, abilityRanks, excludedActives]);
+        disabledAbilities, stacksByItem, abilityRanks, excludedActives, imbueAssign]);
 
     // Attacker's execute / assassinate abilities (HP-% thresholds) for the enemy-health marker.
     const executes = useMemo(
