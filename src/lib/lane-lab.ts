@@ -4,11 +4,13 @@
  * chunk (lazy-loaded), not the main /hideout first-load JS.
  */
 import laneLab from "./lane-lab-data.json";
+import { fillToSouls, type BuildPath } from "./build-path";
 
 const ll = laneLab as unknown as {
   counter_stats: { hero_id: number; enemy_hero_id: number; wins: number; matches_played: number }[];
   counter_item_stats: Record<string, Record<string, { item_id: number; wins: number; losses: number; matches: number; avg_buy_time_s?: number | null }[]>>;
   item_stats: Record<string, { item_id: number; wins: number; losses: number; matches: number }[]>;
+  build_paths?: Record<string, { itemId: number; souls: number; pickrate: number; winrate: number }[]>;
 };
 
 const wr = (wins: number, total: number) => (total > 0 ? wins / total : 0);
@@ -27,4 +29,14 @@ export function getCounterItems(youId: number, enemyId: number): { itemId: numbe
 export function getItemStats(youId: number): { itemId: number; winrate: number; matches: number }[] {
   const rows = ll.item_stats[youId] ?? [];
   return rows.map((r) => ({ itemId: r.item_id, winrate: wr(r.wins, r.wins + r.losses), matches: r.matches }));
+}
+
+/** A hero's distilled average build path, steps ascending by souls (empty if no data). */
+export function getBuildPath(heroId: number): BuildPath {
+  return (ll.build_paths?.[heroId] ?? []) as BuildPath; // already ascending + typed at bake time
+}
+
+/** DB item ids the average enemy of `heroId` owns at `souls` (≤ `maxItems`, highest-pickrate on overflow). */
+export function buildPathAtSouls(heroId: number, souls: number, maxItems = 12): number[] {
+  return fillToSouls(getBuildPath(heroId), souls, maxItems);
 }

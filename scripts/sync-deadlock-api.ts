@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../src/db";
 import { heroes, abilities, items, itemStatModifiers } from "../src/db/schema";
 import { captureSnapshot } from "../src/lib/snapshot";
+import { distillBuildPath } from "../src/lib/build-path";
 
 const HEROES_URL = "https://api.deadlock-api.com/v1/assets/heroes?only_active=true";
 const ITEMS_URL = "https://api.deadlock-api.com/v1/assets/items";
@@ -23,6 +24,11 @@ const FETCH_OPTS: RequestInit = {
 const ANALYTICS_API = "https://api.deadlock-api.com/v1/analytics";
 const LANE_LAB = { min_average_badge: 80, min_matches: 100, window_days: 30 } as const;
 const TOP_N_COUNTER_ITEMS = 16;
+const BUILD_PATH_MIN_PICKRATE = 0.08; // keep only items >= 8% of a hero's matches on their build path
+// Curated-aggregate floors (research appendix conventions): global item stats + per-hero ability orders.
+const ITEM_AGG_MIN_MATCHES = 200; // sample floor for global per-item win/pick
+const ABILITY_ORDER_MIN_MATCHES = 50; // sample floor per observed skill order
+const TOP_N_ABILITY_ORDERS = 10; // keep the top-N most-common orders per hero
 // Optional dev cap: set LANE_LAB_MAX_HEROES to a small number to validate the script quickly.
 // When unset the full active-hero roster is used (the daily CI action bakes all heroes).
 const MAX_HEROES = process.env.LANE_LAB_MAX_HEROES ? Number(process.env.LANE_LAB_MAX_HEROES) : Infinity;
@@ -718,8 +724,11 @@ async function main() {
     await captureSnapshot();
     console.log("  captured stat snapshot for patch history");
 
-    // Bake the data into a committed module the app imports at build time, so it runs
-    // with no runtime database and deploys to any serverless host. Regenerated each sync.
+    // Compute the baked game-data payload IN MEMORY (do not write yet). All output
+    // files are written together at the very end, only after every analytics fetch
+    // succeeds — an ATOMIC output so a late API failure can never leave baked-data.json
+    // and lane-lab-data.json on inconsistent, freshly-regenerated ids (see the 2026-07-04
+    // partial-write incident). If any source below throws, main() throws → nothing written.
     const bakedPath = new URL("../src/lib/baked-data.json", import.meta.url);
     const bakedHeroes = await db.query.heroes.findMany({ with: { abilities: true }, orderBy: (h, { asc }) => [asc(h.name)] });
     const bakedItems = await db.query.items.findMany({ with: { modifiers: true }, orderBy: (i, { asc }) => [asc(i.tier), asc(i.name)] });
@@ -731,16 +740,6 @@ async function main() {
     } catch { /* first run — no previous baked file */ }
     const justCaptured = await db.query.statSnapshots.findMany({ orderBy: (sn, { desc }) => [desc(sn.takenAt)], limit: 1 });
     const snapshots = [...justCaptured, ...prevSnaps].slice(0, 2);
-    // Drop per-row createdAt/updatedAt (unused at runtime, and they'd churn every sync
-    // even when the game data is unchanged — freshness comes from `syncedAt`).
-    writeFileSync(
-        bakedPath,
-        JSON.stringify(
-            { syncedAt: new Date().toISOString(), heroes: bakedHeroes, items: bakedItems, snapshots },
-            (key, value) => (key === "createdAt" || key === "updatedAt" ? undefined : value)
-        )
-    );
-    console.log(`  baked data → src/lib/baked-data.json (${bakedHeroes.length} heroes, ${bakedItems.length} items, ${snapshots.length} snapshots)`);
 
     // ─── Lane Lab analytics ─────────────────────────────────────────────────────
     // Fetches counter/synergy/item analytics from deadlock-api and bakes them into
@@ -752,10 +751,6 @@ async function main() {
     const base = `min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&same_lane_filter=true`;
 
     const counter_stats = await getJSON(`${ANALYTICS_API}/hero-counter-stats?${base}&min_matches=${LANE_LAB.min_matches}`);
-    // hero-level item stats (one call, bucket=hero): each row's `bucket` field is the hero_id
-    const itemRows: any[] = await getJSON(`${ANALYTICS_API}/item-stats?bucket=hero&min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&min_matches=200`);
-    const item_stats: Record<number, any[]> = {};
-    for (const r of itemRows) (item_stats[r.bucket] ??= []).push({ item_id: r.item_id, wins: r.wins, losses: r.losses, matches: r.matches });
 
     // Use the deadlock-api hero IDs (h.id) from the already-fetched heroData.
     // bakedHeroes ids are auto-incremented DB ids and do NOT match the analytics API.
@@ -764,25 +759,59 @@ async function main() {
         .map((h) => h.id as number)
         .slice(0, MAX_HEROES);
 
+    // Global per-item win/pick aggregates (for the /items two-axis ranking). One un-bucketed
+    // call — bucket=hero returns HTTP 500 upstream (persistent server-side DB error as of
+    // 2026-07-04), so per-hero item stats are fetched per hero below via hero_ids=.
+    const globalItemRows: any[] = await getJSON(`${ANALYTICS_API}/item-stats?min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&min_matches=${ITEM_AGG_MIN_MATCHES}`);
+    const item_aggregates = globalItemRows.map((r) => ({ item_id: r.item_id, wins: r.wins, matches: r.matches }));
+
+    // Per-hero: hero-level item stats (replaces the dead bucket=hero call — hero_ids= plural
+    // is honored and filters correctly), the average build path (item-flow-stats nodes; edges
+    // discarded), and the top-N ability orders. One fetch pair per hero, paced ≥350ms.
+    const item_stats: Record<number, any[]> = {};
+    // build_paths keeps api item_ids here; translated to DB ids in the translation block below.
+    const build_paths: Record<number, { item_id: number; souls: number; pickrate: number; winrate: number }[]> = {};
+    const ability_orders: Record<number, { abilities: number[]; wins: number; matches: number }[]> = {};
+    for (const hid of activeHeroIds) {
+        // (a) hero-level item stats (was bucket=hero; now per-hero hero_ids=)
+        const heroItemRows: any[] = await getJSON(`${ANALYTICS_API}/item-stats?hero_ids=${hid}&min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&min_matches=${ITEM_AGG_MIN_MATCHES}`);
+        item_stats[hid] = heroItemRows.map((r) => ({ item_id: r.item_id, wins: r.wins, losses: r.losses, matches: r.matches }));
+        await sleep(350);
+
+        // (b) average build path — item-flow-stats. ⚠️ hero_ids (plural): hero_id (singular) is
+        // IGNORED on this endpoint (returns global data). Discard edges (payload bulk); nodes only.
+        const flow: any = await getJSON(`${ANALYTICS_API}/item-flow-stats?hero_ids=${hid}&min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&min_matches=${LANE_LAB.min_matches}`);
+        const steps = distillBuildPath(flow.nodes ?? [], flow.summary?.matches ?? 0, BUILD_PATH_MIN_PICKRATE);
+        build_paths[hid] = steps.map((s) => ({ item_id: s.itemId, souls: s.souls, pickrate: +s.pickrate.toFixed(3), winrate: +s.winrate.toFixed(3) }));
+        await sleep(350);
+
+        // (c) ability-order stats — hero_id (singular) IS honored on this endpoint. Top-N by matches.
+        const orderRows: any[] = await getJSON(`${ANALYTICS_API}/ability-order-stats?hero_id=${hid}&min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&min_matches=${ABILITY_ORDER_MIN_MATCHES}`);
+        ability_orders[hid] = orderRows
+            .map((r) => ({ abilities: r.abilities as number[], wins: r.wins as number, matches: r.matches as number }))
+            .sort((a, b) => b.matches - a.matches)
+            .slice(0, TOP_N_ABILITY_ORDERS);
+        await sleep(350);
+    }
+
     // Per-(hero, enemy) curated counter items — top-N by winrate, paced ≥350ms per call.
+    // hero_id (singular) IS honored on item-stats (verified 2026-07-04: hero_id=X and hero_ids=X
+    // are byte-identical, and different you-heroes vs the same enemy return different data) —
+    // v1's baked counter data was correctly hero-filtered.
     const counter_item_stats: Record<number, Record<number, any[]>> = {};
     let pairCount = 0;
     for (const hid of activeHeroIds) {
         counter_item_stats[hid] = {};
         for (const eid of activeHeroIds) {
             if (eid === hid) continue;
-            try {
-                const rows: any[] = await getJSON(
-                    `${ANALYTICS_API}/item-stats?hero_id=${hid}&enemy_hero_ids=${eid}&same_lane_filter=true&min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&min_matches=50`,
-                );
-                counter_item_stats[hid][eid] = rows
-                    .map((r) => ({ item_id: r.item_id, wins: r.wins, losses: r.losses, matches: r.matches, avg_buy_time_s: Math.round(r.avg_buy_time_s ?? 0) || null }))
-                    .sort((a, b) => (b.wins / Math.max(b.matches, 1)) - (a.wins / Math.max(a.matches, 1)))
-                    .slice(0, TOP_N_COUNTER_ITEMS);
-                pairCount++;
-            } catch (e) {
-                console.warn(`  [warn] skipping pair ${hid}/${eid}: ${e}`);
-            }
+            const rows: any[] = await getJSON(
+                `${ANALYTICS_API}/item-stats?hero_ids=${hid}&enemy_hero_ids=${eid}&same_lane_filter=true&min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&min_matches=50`,
+            );
+            counter_item_stats[hid][eid] = rows
+                .map((r) => ({ item_id: r.item_id, wins: r.wins, losses: r.losses, matches: r.matches, avg_buy_time_s: Math.round(r.avg_buy_time_s ?? 0) || null }))
+                .sort((a, b) => (b.wins / Math.max(b.matches, 1)) - (a.wins / Math.max(a.matches, 1)))
+                .slice(0, TOP_N_COUNTER_ITEMS);
+            pairCount++;
             await sleep(350);
         }
     }
@@ -815,6 +844,27 @@ async function main() {
         return name != null ? (_itemNameToDbId.get(name) ?? null) : null;
     };
 
+    // apiAbilityId → DB ability id. Ability-order-stats' abilities[] carry api ability item-ids
+    // (type=ability items, e.g. 1593133799). There is no /abilities endpoint — resolve names via
+    // /v1/assets/items/by-hero-id/{hero_id} (per the research appendix), then join to the baked
+    // ability rows by (heroDbId, abilityName). Built per hero so identically-named abilities across
+    // heroes never collide.
+    const _abilityNameToDbId = new Map<string, number>(); // key: `${dbHeroId} ${abilityName}`
+    for (const bh of bakedHeroes) for (const ab of (bh as any).abilities ?? []) _abilityNameToDbId.set(`${bh.id} ${ab.name}`, ab.id);
+    // apiAbilityId → ability name (fetched per hero, one call each — cheap, cached in a map).
+    const _apiAbilityIdToName = new Map<number, string>();
+    for (const hid of activeHeroIds) {
+        const dbHeroId = xlHero(hid);
+        if (dbHeroId == null || (ability_orders[hid]?.length ?? 0) === 0) continue;
+        const assets: any[] = await getJSON(`https://api.deadlock-api.com/v1/assets/items/by-hero-id/${hid}`);
+        for (const a of assets) if (a.type === "ability" && typeof a.id === "number" && typeof a.name === "string") _apiAbilityIdToName.set(a.id, a.name);
+        await sleep(200);
+    }
+    const xlAbility = (dbHeroId: number, apiAbilityId: number): number | null => {
+        const name = _apiAbilityIdToName.get(apiAbilityId);
+        return name != null ? (_abilityNameToDbId.get(`${dbHeroId} ${name}`) ?? null) : null;
+    };
+
     // Translate counter_stats: hero_id + enemy_hero_id; project to the 4 fields we use
     const translated_counter_stats = (counter_stats as any[])
         .map(r => { const h = xlHero(r.hero_id), e = xlHero(r.enemy_hero_id); return (h != null && e != null) ? { hero_id: h, enemy_hero_id: e, wins: r.wins as number, matches_played: r.matches_played as number } : null; })
@@ -843,11 +893,63 @@ async function main() {
         }
     }
 
+    // Translate build_paths: hero key + each step's item_id (api → DB). Steps stay souls-ascending.
+    const translated_build_paths: Record<number, { itemId: number; souls: number; pickrate: number; winrate: number }[]> = {};
+    for (const [apiHeroKey, steps] of Object.entries(build_paths)) {
+        const dbHeroId = xlHero(Number(apiHeroKey));
+        if (dbHeroId == null) continue;
+        const xl = steps
+            .map((s) => { const iid = xlItem(s.item_id); return iid != null ? { itemId: iid, souls: s.souls, pickrate: s.pickrate, winrate: s.winrate } : null; })
+            .filter((s): s is NonNullable<typeof s> => s != null);
+        if (xl.length > 0) translated_build_paths[dbHeroId] = xl;
+    }
+
+    // ─── Curated aggregates (separate lazy JSON for C1/C2) ───────────────────────
+    // Translate global item aggregates: each row's item_id (api → DB).
+    const translated_item_aggregates = item_aggregates
+        .map((r) => { const iid = xlItem(r.item_id); return iid != null ? { item_id: iid, wins: r.wins, matches: r.matches } : null; })
+        .filter((r): r is NonNullable<typeof r> => r != null);
+
+    // Translate ability_orders: hero key + each order's abilities[] (api ability id → DB ability id).
+    // Drop any order that loses an ability in translation (keeps every displayed order fully resolvable).
+    const translated_ability_orders: Record<number, { abilities: number[]; wins: number; matches: number }[]> = {};
+    for (const [apiHeroKey, orders] of Object.entries(ability_orders)) {
+        const dbHeroId = xlHero(Number(apiHeroKey));
+        if (dbHeroId == null) continue;
+        const xl = orders
+            .map((o) => {
+                const abilities = o.abilities.map((aid) => xlAbility(dbHeroId, aid));
+                return abilities.every((a) => a != null) ? { abilities: abilities as number[], wins: o.wins, matches: o.matches } : null;
+            })
+            .filter((o): o is NonNullable<typeof o> => o != null);
+        if (xl.length > 0) translated_ability_orders[dbHeroId] = xl;
+    }
+
+    // ─── Atomic output: write ALL files only after every fetch above succeeded ────
+    // Any API failure throws before this point → main() rejects → nothing written, exit
+    // non-zero. This keeps baked-data.json + lane-lab-data.json + aggregates-data.json on a
+    // single, mutually-consistent set of freshly-regenerated ids (the 2026-07-04 fix).
+    const now = new Date().toISOString();
+    // Drop per-row createdAt/updatedAt (unused at runtime; they'd churn every sync even when
+    // the game data is unchanged — freshness comes from `syncedAt`).
+    writeFileSync(
+        bakedPath,
+        JSON.stringify(
+            { syncedAt: now, heroes: bakedHeroes, items: bakedItems, snapshots },
+            (key, value) => (key === "createdAt" || key === "updatedAt" ? undefined : value),
+        ),
+    );
     writeFileSync(
         new URL("../src/lib/lane-lab-data.json", import.meta.url),
-        JSON.stringify({ synced_at: new Date().toISOString(), params: LANE_LAB, counter_stats: translated_counter_stats, counter_item_stats: translated_counter_item_stats, item_stats: translated_item_stats }),
+        JSON.stringify({ synced_at: now, params: LANE_LAB, counter_stats: translated_counter_stats, counter_item_stats: translated_counter_item_stats, item_stats: translated_item_stats, build_paths: translated_build_paths }),
     );
-    console.log(`  lane-lab data → src/lib/lane-lab-data.json (${translated_counter_stats.length} counter pairs, ${activeHeroIds.length} heroes, ${pairCount} per-pair calls)`);
+    writeFileSync(
+        new URL("../src/lib/aggregates-data.json", import.meta.url),
+        JSON.stringify({ synced_at: now, params: { min_average_badge: LANE_LAB.min_average_badge, item_min_matches: ITEM_AGG_MIN_MATCHES, ability_order_min_matches: ABILITY_ORDER_MIN_MATCHES, window_days: LANE_LAB.window_days }, item_stats: translated_item_aggregates, ability_orders: translated_ability_orders }),
+    );
+    console.log(`  baked data → src/lib/baked-data.json (${bakedHeroes.length} heroes, ${bakedItems.length} items, ${snapshots.length} snapshots)`);
+    console.log(`  lane-lab data → src/lib/lane-lab-data.json (${translated_counter_stats.length} counter pairs, ${activeHeroIds.length} heroes, ${pairCount} per-pair calls, ${Object.keys(translated_build_paths).length} build paths)`);
+    console.log(`  aggregates data → src/lib/aggregates-data.json (${translated_item_aggregates.length} global items, ${Object.keys(translated_ability_orders).length} heroes' ability orders)`);
     console.log("Done.");
 }
 

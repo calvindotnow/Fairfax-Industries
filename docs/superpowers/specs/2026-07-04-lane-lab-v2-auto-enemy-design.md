@@ -27,11 +27,16 @@ granularity/availability for per-soul build-path aggregation"*). Probed live 202
 
 ### Endpoint: `GET /v1/analytics/item-flow-stats`
 
-- **`hero_ids` (plural) is the working filter.** ⚠️ `hero_id` (singular, as written in the spike
-  doc and the *existing counter-item sync*) is **silently ignored** on this endpoint — it returns
-  global cross-hero data. Confirmed: `?hero_id=1` and `?hero_id=15` returned byte-identical payloads
-  (`summary.matches = 4,086,486`, the global total); `?hero_ids=1` (144,946 matches) and
-  `?hero_ids=15` (164,815 matches) differ correctly. **The sync MUST use `hero_ids`.**
+- **`hero_ids` (plural) is the working filter.** ⚠️ `hero_id` (singular) is **silently ignored
+  on this endpoint** — it returns global cross-hero data. Confirmed: `?hero_id=1` and `?hero_id=15`
+  returned byte-identical payloads (`summary.matches = 4,086,486`, the global total); `?hero_ids=1`
+  (144,946 matches) and `?hero_ids=15` (164,815 matches) differ correctly. **The sync MUST use
+  `hero_ids` for item-flow-stats.**
+  *(Correction, C0 audit 2026-07-04: this ignore behavior is **specific to `item-flow-stats`**.
+  `item-stats` and `ability-order-stats` DO honor `hero_id` singular — verified byte-identical
+  `hero_id=1` vs `hero_ids=1` on item-stats, and differing results across heroes — so the shipped
+  Lane Lab v1 counter data was correctly hero-filtered all along. The sync now uses `hero_ids`
+  everywhere anyway for consistency.)*
 - **Shape:** `{ nodes[], edges[], summary, baseline, reached_per_column }`.
   - `nodes[]`: `{ column, item_id, wins, losses, matches, players, avg_net_worth_at_buy, adjusted_win_rate, total_kills/deaths/assists }`.
   - `edges[]`: `{ from_column, from_item_id, to_item_id, wins, losses, matches }` — the *transition
