@@ -2,6 +2,7 @@ import { test, expect, describe } from "bun:test";
 import { db } from "../../db";
 import { simulate, levelFromSouls, investmentBonus, parseEffects, abilityExecute } from "./index";
 import type { HeroWithAbilities, ItemData } from "./index";
+import { tierBehaviorFor, TIER_BEHAVIORS, type TierBehaviorEntry } from "./tier-behaviors";
 
 // Real game data (DB is populated by the deadlock-api sync).
 const heroes = (await db.query.heroes.findMany({ with: { abilities: true } })) as unknown as HeroWithAbilities[];
@@ -12,7 +13,7 @@ const item = (name: string) => items.find((i) => i.name === name)!;
 const byCategoryDesc = (cat: string) =>
     items.filter((i) => i.category === cat).sort((a, b) => b.soulCost - a.soulCost);
 
-const opts = (over: Partial<{ range: number; shots: number; headshots: number; disabledAbilityIds: number[]; hittingEnemy: boolean; resistDebuffs: boolean; activesFiring: boolean; stacksByItem: Record<number, number>; accuracy: number; headshotPct: number; abilityRanks: Record<number, number>; excludedActiveItemIds: number[] }> = {}) => ({
+const opts = (over: Partial<{ range: number; shots: number; headshots: number; disabledAbilityIds: number[]; hittingEnemy: boolean; resistDebuffs: boolean; activesFiring: boolean; stacksByItem: Record<number, number>; accuracy: number; headshotPct: number; abilityRanks: Record<number, number>; excludedActiveItemIds: number[]; imbueAssign: Record<number, number>; tierBehaviorsOverride: TierBehaviorEntry[] }> = {}) => ({
     range: 15,
     shots: 8,
     headshots: 0,
@@ -137,6 +138,53 @@ describe("combat-scenario conditionals", () => {
         expect(s99.damagePerShot).toBeCloseTo(s10.damagePerShot); // capped at 10 stacks
     });
 
+    test("Escalating Exposure's per-stack Spirit Amp raises spirit ability damage (target takes more)", () => {
+        // Synthetic item shaped like the real Escalating Exposure effect: 4.5% Spirit Amp per
+        // stack, cap 12 → +54% spirit damage at max. Modeled as a TARGET spirit-damage amp
+        // (multiplies spirit damage), distinct from Spirit Power (which grows the coefficient term).
+        const amp: ItemData = {
+            id: 990001, name: "Escalating Exposure (test)", category: "spirit", tier: 3, soulCost: 3000,
+            isActive: false, modifiers: [],
+            effects: JSON.stringify([{ kind: "stacking", value: 4.5, stat: "spiritAmp", maxStacks: 12 }]),
+        };
+        const napalm = hero("Infernus").abilities.find((a) => /Napalm/.test(a.name))!;
+        const base = simulate({ hero: hero("Infernus"), items: [amp] }, { hero: hero("Abrams") }, opts({ stacksByItem: { [amp.id]: 0 } }));
+        const maxed = simulate({ hero: hero("Infernus"), items: [amp] }, { hero: hero("Abrams") }, opts({ stacksByItem: { [amp.id]: 12 } }));
+        const b = base.abilities.find((a) => a.id === napalm.id)!.burstDamage;
+        const m = maxed.abilities.find((a) => a.id === napalm.id)!.burstDamage;
+        // 12 stacks × 4.5% = +54% → ×1.54 exactly (soul cost identical in both, so nothing else moves).
+        expect(m / b).toBeCloseTo(1.54, 5);
+    });
+
+    test("Escalating Exposure's Spirit Amp does not touch weapon ability/damage", () => {
+        const amp: ItemData = {
+            id: 990002, name: "Escalating Exposure (test)", category: "spirit", tier: 3, soulCost: 3000,
+            isActive: false, modifiers: [],
+            effects: JSON.stringify([{ kind: "stacking", value: 4.5, stat: "spiritAmp", maxStacks: 12 }]),
+        };
+        // Haze weapon shots are bullet damage — the spirit amp must leave weapon output untouched.
+        const off = simulate({ hero: hero("Haze"), items: [amp] }, { hero: hero("Abrams") }, opts({ range: 10, stacksByItem: { [amp.id]: 0 } }));
+        const on = simulate({ hero: hero("Haze"), items: [amp] }, { hero: hero("Abrams") }, opts({ range: 10, stacksByItem: { [amp.id]: 12 } }));
+        expect(on.damagePerShot).toBeCloseTo(off.damagePerShot, 5);
+        expect(on.burst.weaponDamage).toBeCloseTo(off.burst.weaponDamage, 5);
+    });
+
+    test("Restorative Locket reports heal-per-cast sustain scaling with stacks (readout only)", () => {
+        // Real Locket: 16 heal per stack, cap 25 → 400 max heal. No damage output, so it surfaces
+        // as a sustain readout (SimResult.sustain), not folded into any damage number.
+        const locket: ItemData = {
+            id: 990003, name: "Restorative Locket (test)", category: "vitality", tier: 2, soulCost: 1250,
+            isActive: true, modifiers: [],
+            effects: JSON.stringify([{ kind: "stacking", value: 16, stat: "heal", maxStacks: 25 }]),
+        };
+        const none = simulate({ hero: hero("Haze"), items: [locket] }, { hero: hero("Abrams") }, opts({ stacksByItem: { [locket.id]: 0 } }));
+        const maxed = simulate({ hero: hero("Haze"), items: [locket] }, { hero: hero("Abrams") }, opts({ stacksByItem: { [locket.id]: 25 } }));
+        expect(none.sustain.heal).toBe(0);
+        expect(maxed.sustain.heal).toBe(400); // 25 × 16
+        // A heal must never leak into the damage numbers.
+        expect(maxed.burst.total).toBeCloseTo(none.burst.total, 5);
+    });
+
     test("Actives firing applies active items' self-buffs (Blood Tribute fire rate)", () => {
         const off = simulate({ hero: hero("Haze"), items: [item("Blood Tribute")] }, { hero: hero("Abrams") }, opts({ range: 10 }));
         const on = simulate({ hero: hero("Haze"), items: [item("Blood Tribute")] }, { hero: hero("Abrams") }, opts({ range: 10, activesFiring: true }));
@@ -245,6 +293,124 @@ describe("abilities", () => {
         const on = simulate({ hero: haze, items: [] }, { hero: hero("Abrams") }, opts());
         const off = simulate({ hero: haze, items: [] }, { hero: hero("Abrams") }, opts({ disabledAbilityIds: [dmgAbility.id] }));
         expect(off.burst.total).toBeLessThan(on.burst.total);
+    });
+
+    // ── B2: %-of-health ability damage (evaluated at the target's FULL health) ──
+    // Build a hero carrying one crafted spirit ability with a health-scaling descriptor, so the
+    // engine path is exercised independently of what the sync happens to have baked.
+    const withCraftedAbility = (base: number, healthScaling: object) => {
+        const h = hero("Infernus");
+        const napalm = h.abilities.find((a) => /Napalm/.test(a.name))!;
+        const crafted = {
+            ...napalm, id: 970001, name: "Crafted HP Ability", baseDamage: base, spiritScaling: 0,
+            dotDps: 0, dotDuration: 0, damageKind: "spirit", upgrades: null,
+            properties: JSON.stringify(healthScaling),
+        };
+        return { ...h, abilities: [crafted] };
+    };
+
+    test("current-health ability damage adds pct% of the target's max health at full HP", () => {
+        // Abrams max health at level 1 = 800. 15% current-health damage at full HP = 120 raw,
+        // added to the 100 base, then reduced by Abrams' spirit resist (0 at level 1) = 220.
+        const heroC = withCraftedAbility(100, { healthScaling: { kind: "current", pct: 15 } });
+        const noScale = withCraftedAbility(100, {}); // same base, no health scaling
+        const r = simulate({ hero: heroC, items: [] }, { hero: hero("Abrams") }, opts());
+        const rNo = simulate({ hero: noScale, items: [] }, { hero: hero("Abrams") }, opts());
+        const row = r.abilities[0];
+        const rowNo = rNo.abilities[0];
+        // Abrams starts at 800 HP, 0 spirit resist at level 1.
+        expect(rowNo.burstDamage).toBeCloseTo(100, 0); // base only, no health add
+        expect(row.burstDamage - rowNo.burstDamage).toBeCloseTo(0.15 * 800, 0); // +120
+    });
+
+    test("missing-health ability damage shows nothing at full HP (missing = 0)", () => {
+        const heroM = withCraftedAbility(100, { healthScaling: { kind: "missing", pct: 6 } });
+        const noScale = withCraftedAbility(100, {});
+        const r = simulate({ hero: heroM, items: [] }, { hero: hero("Abrams") }, opts());
+        const rNo = simulate({ hero: noScale, items: [] }, { hero: hero("Abrams") }, opts());
+        // At full health there is no missing health, so it matches the base-only ability exactly.
+        expect(r.abilities[0].burstDamage).toBeCloseTo(rNo.abilities[0].burstDamage, 5);
+    });
+
+    // ── B3: imbue recompute — the imbue item's magnitude changes the ASSIGNED ability's numbers ──
+    const imbueItem = (over: object): ItemData => ({
+        id: 960001, name: "Surge of Power (test)", category: "spirit", tier: 3, soulCost: 3000,
+        isActive: false, modifiers: [],
+        effects: JSON.stringify([{ kind: "imbue", value: 0, ...over }]),
+    });
+
+    test("imbued Spirit Power lifts only the assigned ability's damage (via its coefficient)", () => {
+        // Napalm: base 40, scale 0.6 spirit. +28 imbued Spirit Power → +28×0.6 = +16.8 raw
+        // to that ability only (Abrams' spirit resist is 0 at level 1, so mitigated add = 16.8).
+        const napalm = hero("Infernus").abilities.find((a) => /Napalm/.test(a.name))!;
+        const imb = imbueItem({ imbuedSpiritPower: 28 });
+        const unassigned = simulate({ hero: hero("Infernus"), items: [imb] }, { hero: hero("Abrams") }, opts());
+        const assigned = simulate({ hero: hero("Infernus"), items: [imb] }, { hero: hero("Abrams") },
+            opts({ imbueAssign: { [imb.id]: napalm.id } }));
+        const before = unassigned.abilities.find((a) => a.id === napalm.id)!.burstDamage;
+        const after = assigned.abilities.find((a) => a.id === napalm.id)!.burstDamage;
+        expect(after - before).toBeCloseTo(28 * 0.6, 1); // +16.8, before any resist (Abrams = 0)
+    });
+
+    test("imbued Spirit Power does NOT touch other abilities", () => {
+        const infernus = hero("Infernus");
+        const napalm = infernus.abilities.find((a) => /Napalm/.test(a.name))!;
+        const other = infernus.abilities.find((a) => a.id !== napalm.id && (a.baseDamage ?? 0) > 0)!;
+        const imb = imbueItem({ imbuedSpiritPower: 28 });
+        const assigned = simulate({ hero: infernus, items: [imb] }, { hero: hero("Abrams") },
+            opts({ imbueAssign: { [imb.id]: napalm.id } }));
+        const base = simulate({ hero: infernus, items: [imb] }, { hero: hero("Abrams") }, opts());
+        const otherA = assigned.abilities.find((a) => a.id === other.id)!.burstDamage;
+        const otherB = base.abilities.find((a) => a.id === other.id)!.burstDamage;
+        expect(otherA).toBeCloseTo(otherB, 5); // untouched
+    });
+
+    test("imbued duration extends the assigned DoT ability's full-duration damage", () => {
+        // Shiv's Serrated Knives is a multi-second bleed DoT. A +25% duration imbue extends its
+        // lifetime, so dotFull grows by ~25% while the per-second rate is unchanged.
+        const shiv = hero("Shiv");
+        const sk = shiv.abilities.find((a) => /Serrated Knives/.test(a.name))!;
+        const imb = imbueItem({ imbuedDurationPct: 25 });
+        const base = simulate({ hero: shiv, items: [imb] }, { hero: hero("Abrams") }, opts());
+        const assigned = simulate({ hero: shiv, items: [imb] }, { hero: hero("Abrams") },
+            opts({ imbueAssign: { [imb.id]: sk.id } }));
+        const b = base.abilities.find((a) => a.id === sk.id)!;
+        const a2 = assigned.abilities.find((a) => a.id === sk.id)!;
+        expect(a2.dotPerSec).toBeCloseTo(b.dotPerSec, 3); // rate unchanged
+        expect(a2.dotFull / b.dotFull).toBeCloseTo(1.25, 2); // +25% duration
+    });
+});
+
+describe("tier behaviors (B4 — curated non-numeric rank mechanics)", () => {
+    test("the shipped table is empty (no unverified mechanics encoded)", () => {
+        // The canonical candidate (Shiv Slice and Dice ×2) was NOT verified as a rank threshold —
+        // the double strike is a Rage/ultimate echo, not a T3 behavior — so nothing is encoded.
+        expect(TIER_BEHAVIORS).toHaveLength(0);
+    });
+
+    test("tierBehaviorFor matches on hero + ability + rank threshold", () => {
+        const table: TierBehaviorEntry[] = [
+            { hero: "Shiv", abilityNameTest: /Slice and Dice/i, minRank: 3, behavior: { damageMult: 2, note: "test" } },
+        ];
+        expect(tierBehaviorFor("Shiv", "Slice and Dice", 3, table)).toEqual({ damageMult: 2, note: "test" });
+        expect(tierBehaviorFor("Shiv", "Slice and Dice", 2, table)).toBeNull(); // below threshold
+        expect(tierBehaviorFor("Haze", "Slice and Dice", 3, table)).toBeNull(); // wrong hero
+        expect(tierBehaviorFor("Shiv", "Fixation", 3, table)).toBeNull(); // wrong ability
+    });
+
+    test("a curated damageMult doubles the ability's damage once its rank meets the threshold", () => {
+        // Prove the ENGINE application with an injected table (the real table stays empty). Infernus'
+        // Napalm at rank 0 with a ×2 override at minRank 0 should deal exactly twice its damage.
+        const infernus = hero("Infernus");
+        const napalm = infernus.abilities.find((a) => /Napalm/.test(a.name))!;
+        const override: TierBehaviorEntry[] = [
+            { hero: "Infernus", abilityNameTest: /Napalm/i, minRank: 0, behavior: { damageMult: 2 } },
+        ];
+        const base = simulate({ hero: infernus, items: [] }, { hero: hero("Abrams") }, opts());
+        const doubled = simulate({ hero: infernus, items: [] }, { hero: hero("Abrams") }, opts({ tierBehaviorsOverride: override }));
+        const b = base.abilities.find((a) => a.id === napalm.id)!.burstDamage;
+        const d = doubled.abilities.find((a) => a.id === napalm.id)!.burstDamage;
+        expect(d).toBeCloseTo(b * 2, 2);
     });
 });
 

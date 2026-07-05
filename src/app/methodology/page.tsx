@@ -11,6 +11,10 @@ const included = [
     body: "Each ability's damage at the current level. Ultimates are off by default — most heroes don't ult in a burst — but toggle any ability on or off.",
   },
   {
+    title: "Health-scaling & imbue",
+    body: "Abilities that deal a percentage of the target's health show it at full HP (current-health scalers add their share; missing-health scalers correctly read zero when nothing is missing). An imbue attached to an ability recomputes that ability alone — its imbued Spirit Power lifts the damage, and duration imbues extend it.",
+  },
+  {
     title: "Damage over time",
     body: "DoT is broken out three ways: applied per second, a 0.5s slice folded into the burst total, and the full amount if the target sits in it for the whole duration.",
   },
@@ -35,7 +39,7 @@ const included = [
 const excluded = [
   {
     title: "Item stacking buffs",
-    body: "Stacks-over-time items (bonuses that build up as you fight) aren't modeled yet — the data doesn't expose per-stack values. Their flat and percentage stats still count.",
+    body: "Stat-boost stacks (weapon damage, fire rate) are modeled from their per-stack values, and the slider drives the number. Escalating Exposure's per-stack Spirit Amp now multiplies your spirit damage (the target takes more), and Restorative Locket's heal-per-stack shows as a sustain readout. A few exotic stack effects still count only their flat/percentage stats.",
   },
   {
     title: "Active-item combos",
@@ -44,6 +48,18 @@ const excluded = [
   {
     title: "Some melee detail",
     body: "Melee covers base + per-level scaling, but not yet its +50% Weapon-Damage scaling, melee-damage items, or the separate Melee-Resist stat.",
+  },
+  {
+    title: "Spirit-scaled range & duration",
+    body: "Some abilities grow their range or duration with Spirit Power. The game data exposes only that they scale — not by how much — so we show a \"scales with Spirit\" tag rather than a recomputed figure. We won't invent a coefficient the data doesn't give us.",
+  },
+  {
+    title: "Ramp-style health damage",
+    body: "Abilities that ramp between a minimum and maximum based on the target's health (e.g. Vyper's Lethal Venom) show the ramp's top-end figure, not the value at full health. Simple single-percentage health damage is modeled; the min/max ramp isn't yet.",
+  },
+  {
+    title: "Behavior-only rank upgrades",
+    body: "Every numeric tier upgrade is applied. A few tiers add a mechanic instead of a number; the engine has a curated slot for these, kept deliberately empty until each is verified against the live patch, so nothing is guessed.",
   },
 ];
 
@@ -144,6 +160,22 @@ export default function MethodologyPage() {
       <section className="max-w-2xl space-y-4">
         <h2 className="font-display text-2xl text-foreground">Changelog</h2>
         <ul className="space-y-4">
+          <li className="surface p-5">
+            <p className="font-display text-sm tracking-wide text-primary">
+              2026-07-04
+            </p>
+            <p className="mt-1 text-base text-foreground">
+              Deeper engine: stacking amps, health-scaling &amp; imbue.
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Escalating Exposure&rsquo;s per-stack Spirit Amp now multiplies
+              spirit damage (the target takes more), and Restorative Locket
+              reads out as sustain. Percentage-of-health ability damage is shown
+              at full HP, and an imbue recomputes the ability it&rsquo;s attached
+              to. Spirit-scaled range/duration stays a tag — the data exposes no
+              coefficient, and we won&rsquo;t fabricate one.
+            </p>
+          </li>
           <li className="surface p-5">
             <p className="font-display text-sm tracking-wide text-primary">
               2026-06-25

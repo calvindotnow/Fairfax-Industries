@@ -7,6 +7,8 @@
  * types are structurally compatible, so DB rows can be passed in directly.
  */
 
+import type { TierBehaviorEntry } from "./tier-behaviors";
+
 export type DamageType = "weapon" | "spirit";
 export type AbilityDamageKind = "spirit" | "weapon" | null;
 
@@ -87,10 +89,15 @@ export interface StackingEffect extends ItemEffectBase {
     maxStacks?: number;
 }
 
-/** An imbue relationship marker: the item imbues one ability (no direct numbers). */
+/** An imbue relationship marker: the item imbues one ability. Carries the recompute magnitudes
+ *  applied to the imbued ability ONLY — `imbuedSpiritPower` (extra Spirit Power for that ability's
+ *  damage coefficient, e.g. Surge of Power +28, Frostbite Charm +70) and `imbuedDurationPct` (a %
+ *  duration extension, e.g. Duration Extender +22%). `value` is the legacy display marker (0). */
 export interface ImbueEffect extends ItemEffectBase {
     kind: "imbue";
     value: number;
+    imbuedSpiritPower?: number;
+    imbuedDurationPct?: number;
 }
 
 /** An active item's on-cast self-buff (Blood Tribute +35% fire rate). Applied only
@@ -178,6 +185,12 @@ export interface AbilityScaling {
     // Execute / assassinate HP-% threshold for the enemy-health-bar marker.
     executePct?: number;
     executeKind?: "kill" | "bonus";
+    // %-of-health ability damage: an extra chunk that scales off the TARGET's health.
+    // Displayed at the target's FULL health (same convention Tankbuster uses for items):
+    //  • kind "current" — deals `pct`% of the target's current health → at full HP = pct% of max.
+    //  • kind "missing" — deals `pct`% of the target's missing health → at full HP = 0 (shows nothing).
+    // The value is added to the ability's mitigated damage in the same damage channel.
+    healthScaling?: { kind: "current" | "missing"; pct: number };
 }
 
 /** Resolved scaling for an ability: the damage coefficient plus the dimensions
@@ -280,6 +293,12 @@ export interface SimOptions {
     // firing" is on (the player didn't press that active in this combo). Default: none
     // excluded. Always-on charge-up damage (Tankbuster) and self-buffs are unaffected.
     excludedActiveItemIds?: number[];
+    // Imbue assignments: imbue item id → the ability id it's attached to. The imbue item's
+    // recompute magnitude (imbuedSpiritPower / imbuedDurationPct) is applied to that ability only.
+    imbueAssign?: Record<number, number>;
+    // Curated tier-behavior overrides (non-numeric rank mechanics). Defaults to the shipped
+    // TIER_BEHAVIORS table; overridable for testing / extension. See tier-behaviors.ts.
+    tierBehaviorsOverride?: TierBehaviorEntry[];
 }
 
 export interface AbilityRow {
@@ -362,4 +381,12 @@ export interface SimResult {
      *  Mystic Shot, …), with their current mitigated per-cast/per-proc value. For the
      *  Spirit panel — these aren't abilities, but they grow with Spirit just the same. */
     spiritItemDamage: { name: string; value: number; perProc?: boolean }[];
+    /** Sustain readouts from stacking heal items (Restorative Locket: heal-per-stack). A pure
+     *  Vitality figure with no offensive component — surfaced so the number is honest, not folded
+     *  into any damage total. `heal` = total heal at the current stack count across such items. */
+    sustain: { heal: number };
+    /** Target spirit-damage amp multiplier from stacking amp items (Escalating Exposure: a
+     *  per-stack Spirit Amp that makes the target take more spirit damage). 1 = no amp. Applied
+     *  to every spirit-typed number below; exposed for the UI to explain the multiplier. */
+    spiritAmpMult: number;
 }

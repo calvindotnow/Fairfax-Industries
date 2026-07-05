@@ -342,11 +342,18 @@ function parseItemEffects(props: Record<string, any>, itemName: string, isActive
         for (const k of Object.keys(props)) {
             if (!isStackKey(k)) continue;
             const perStack = pf(props[k]?.value); // tolerates unit suffixes ("0.15m")
-            const stat = statFromPropName(k);
+            // Two stacking effects aren't computed stats: a per-stack Spirit Amp
+            // (Escalating Exposure's MagicIncreasePerStack — the target takes more spirit
+            // damage) and per-stack heal (Restorative Locket's HealPerStack — pure sustain).
+            // Tag them with a sentinel `stat` the engine handles specially.
+            const stat =
+                /MagicIncreasePerStack/i.test(k) ? "spiritAmp"
+                : /HealPerStack/i.test(k) ? "heal"
+                : statFromPropName(k);
             if (perStack && stat) { add({ kind: "stacking", value: perStack, stat, maxStacks }); emittedModeled = true; }
         }
         // Display-only marker so the slider still appears for stacking items whose per-stack
-        // stat we don't model yet (e.g. Escalating Exposure's spirit-damage amp).
+        // stat we still don't model.
         if (!emittedModeled && Object.keys(props).some(isStackKey)) add({ kind: "stacking", value: 0, maxStacks });
     }
 
@@ -391,7 +398,23 @@ async function main() {
         const eff = parseItemEffects(it.properties || {}, display, !!it.is_active_item);
         // Imbue items attach to one ability. Mark them so the UI can offer an ability picker.
         const isImbue = /imbu/i.test(it.class_name || "") || /imbue an ability|imbued ability/i.test(it.description?.desc || "");
-        if (isImbue) eff.push({ kind: "imbue", value: 0, itemName: display });
+        if (isImbue) {
+            // Recompute magnitudes for the imbued ability (applied to that ability only, engine-side):
+            //  • Spirit Power granted to the ability (ImbuedTechPower/ImbuedBonusDamage — both css
+            //    ETechPower/tech_damage) → adds to the ability's spirit-damage coefficient term.
+            //  • Duration extension % (ImbuedBonusDuration or the generic BonusAbilityDurationPercent)
+            //    → extends the ability's duration / DoT lifetime.
+            const ip = it.properties || {};
+            const imbuedSpiritPower = (pnum(ip.ImbuedTechPower) ?? 0) + (pnum(ip.ImbuedBonusDamage) ?? 0);
+            const imbuedDurationPct = pnum(ip.ImbuedBonusDuration) ?? pnum(ip.BonusAbilityDurationPercent) ?? 0;
+            eff.push({
+                kind: "imbue",
+                value: 0,
+                itemName: display,
+                ...(imbuedSpiritPower ? { imbuedSpiritPower } : {}),
+                ...(imbuedDurationPct ? { imbuedDurationPct } : {}),
+            });
+        }
         // Active items' on-cast self-buffs (ConditionallyApplied stats that map to our model,
         // e.g. Blood Tribute +35% fire rate). Applied only when "Actives firing" is toggled on.
         if (it.is_active_item) {
@@ -578,8 +601,29 @@ async function main() {
                     }
                 }
             }
-            const hasDamage = (num(direct) ?? 0) > 0 || dotDps > 0;
-            const damageKind = hasDamage ? (isTech ? "spirit" : "weapon") : null;
+            // %-of-health ability damage (Victor Jumpstart 15% current, Mina Rake 6% missing,
+            // Silver Slam Fire 2.5% current). Modeled at the target's FULL health downstream:
+            // "current" → pct% of max; "missing" → 0 (nothing missing at full). We only bake the
+            // simple single-percentage form; ramp-style abilities with min/max thresholds
+            // (Vyper Lethal Venom) are NOT baked here — their baked base damage is the ramp's
+            // max (30%-HP) figure, a documented approximation, not a full-HP number.
+            const curHpKey = Object.keys(p).find((k) => /^(?:\w*)Current\w*Health\w*Damage(?:Percentage)?$/i.test(k) && !/Cap|Bonus|Boss/i.test(k));
+            const missHpKey = Object.keys(p).find((k) => /^(?:\w*)MissingHealthDamagePercentage$/i.test(k) && !/Venom/i.test(k));
+            const curHpPct = curHpKey ? pnum(p[curHpKey]) : null;
+            const missHpPct = missHpKey ? pnum(p[missHpKey]) : null;
+            let healthScaling: { kind: "current" | "missing"; pct: number } | null = null;
+            let healthScalingKey: string | undefined;
+            if (curHpPct && curHpPct > 0) { healthScaling = { kind: "current", pct: curHpPct }; healthScalingKey = curHpKey; }
+            else if (missHpPct && missHpPct > 0) { healthScaling = { kind: "missing", pct: missHpPct }; healthScalingKey = missHpKey; }
+
+            const hasDamage = (num(direct) ?? 0) > 0 || dotDps > 0 || healthScaling != null;
+            // Damage type: prefer the detected flat/dot key; else fall back to the health-scaling
+            // key's channel (Silver Slam Fire is bullet_damage; Victor/Mina are tech_damage) so an
+            // ability whose ONLY damage is %-of-health still reports the right weapon/spirit type.
+            const hpIsTech = healthScalingKey ? /tech_damage/.test(p[healthScalingKey]?.css_class || "") : false;
+            const damageKind = hasDamage
+                ? (((num(direct) ?? 0) > 0 || dotDps > 0) ? (isTech ? "spirit" : "weapon") : (hpIsTech ? "spirit" : "weapon"))
+                : null;
 
             // Display-only fields the damage engine doesn't need but the UI does.
             // Values arrive as unit-suffixed strings ("10m", "5", "-1.0").
@@ -622,6 +666,7 @@ async function main() {
             if (rangeScalesWithSpirit) meta.rangeScalesWithSpirit = true;
             if (durationScalesWithSpirit) meta.durationScalesWithSpirit = true;
             if (executePct != null) { meta.executePct = executePct; meta.executeKind = executeKind; }
+            if (healthScaling) meta.healthScaling = healthScaling;
             const scalingJson = Object.keys(meta).length ? JSON.stringify(meta) : null;
 
             // Ability-rank profile: precompute stats at ranks 0–3 + readable tier text. The

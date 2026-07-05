@@ -38,6 +38,7 @@ import {
     levelFromSouls,
     soulsForLevel,
 } from "./tables";
+import { TIER_BEHAVIORS, tierBehaviorFor, type TierBehaviorEntry } from "./tier-behaviors";
 
 // ─── Effects ──────────────────────────────────────────────────────────────────
 export function parseEffects(json: string | null | undefined): ItemEffect[] {
@@ -246,6 +247,34 @@ export function abilityExecute(a: Pick<AbilityData, "properties">): AbilityExecu
     return { pct: flags.executePct, kind: flags.executeKind ?? "bonus" };
 }
 
+/**
+ * An ability's %-of-health damage rider, parsed from its `properties` JSON (`healthScaling`).
+ * Returns the descriptor, or `null` when the ability has none. Following the display convention
+ * (compute at the target's FULL health), the caller adds `pct`% of the target's max health for a
+ * "current"-health scaler, or 0 for a "missing"-health scaler (nothing is missing at full HP).
+ */
+export function abilityHealthScaling(
+    a: Pick<AbilityData, "properties">
+): { kind: "current" | "missing"; pct: number } | null {
+    let flags: AbilityScaling = {};
+    if (a.properties) {
+        try { flags = JSON.parse(a.properties) as AbilityScaling; } catch { /* malformed — ignore */ }
+    }
+    const hs = flags.healthScaling;
+    if (!hs || !hs.pct) return null;
+    return { kind: hs.kind, pct: hs.pct };
+}
+
+/** The extra flat damage a health-scaling ability deals against `targetMaxHealth`, evaluated at
+ *  the target's FULL health: pct% of max for "current"; 0 for "missing" (nothing missing at full).
+ *  Returned pre-mitigation — the caller applies the ability's own resist/amp channel. */
+function healthScaledAdd(a: AbilityData, targetMaxHealth: number): number {
+    const hs = abilityHealthScaling(a);
+    if (!hs) return 0;
+    // "current" at full HP = pct% of max; "missing" at full HP = 0 (no missing health).
+    return hs.kind === "current" ? (hs.pct / 100) * targetMaxHealth : 0;
+}
+
 /** Resolve an ability's effective stats at a trained rank from its precomputed rank
  *  profile (`upgrades` JSON), falling back to the base columns when no profile exists. */
 function resolveRank(a: AbilityData, requested: number) {
@@ -264,20 +293,38 @@ function resolveRank(a: AbilityData, requested: number) {
     return { eff, rank, maxRank, tiers: parsed?.tiers ?? [] };
 }
 
+/** Imbue recompute applied to a single ability: extra Spirit Power for its damage coefficient
+ *  and a % duration extension. Keyed by ability id in `simulate`. */
+type ImbueForAbility = { spiritPower: number; durationPct: number };
+
 function buildAbilityRows(
     abilities: AbilityData[],
     heroStats: ComputedStats,
     targetStats: ComputedStats,
-    ranks: Record<number, number> = {}
+    ranks: Record<number, number> = {},
+    spiritAmpMult = 1,
+    imbueByAbility: Map<number, ImbueForAbility> = new Map(),
+    heroName = "",
+    tierBehaviors: TierBehaviorEntry[] = TIER_BEHAVIORS
 ): AbilityRow[] {
-    const spirit = heroStats.spiritPower ?? 0;
+    const baseSpirit = heroStats.spiritPower ?? 0;
     return abilities.map((a) => {
+        // The imbue item grants extra Spirit Power to THIS ability only (Surge of Power, Frostbite
+        // Charm) and can extend its duration; both apply solely to the assigned ability.
+        const imb = imbueByAbility.get(a.id);
+        const spirit = baseSpirit + (imb?.spiritPower ?? 0);
+        const durationMult = 1 + (imb?.durationPct ?? 0) / 100;
         const type = abilityDamageType(a);
+        // Spirit abilities take the target's per-stack Spirit Amp (Escalating Exposure) on top of
+        // spirit-resist mitigation — a target-takes-more-damage multiplier, not a Spirit-Power add.
         const res =
             type === "spirit"
-                ? 1 - (targetStats.spiritResist ?? 0) / 100
+                ? (1 - (targetStats.spiritResist ?? 0) / 100) * spiritAmpMult
                 : 1 - (targetStats.bulletResist ?? 0) / 100;
         const { eff, rank, maxRank, tiers } = resolveRank(a, ranks[a.id] ?? 0);
+        // Curated non-numeric rank mechanic (e.g. a second strike ⇒ ×2 damage) once the trained
+        // rank meets its threshold. Empty by default — see tier-behaviors.ts.
+        const tierMult = tierBehaviorFor(heroName, a.name, rank, tierBehaviors)?.damageMult ?? 1;
         const isDot = eff.dotDps > 0;
         const { rangeScalesWithSpirit, durationScalesWithSpirit } = deriveAbilityScaling(a);
         // The damage coefficient grows with rank, so read it from the resolved snapshot.
@@ -290,7 +337,9 @@ function buildAbilityRows(
             imageUrl: a.imageUrl,
             cooldown: eff.cooldown,
             range: eff.range,
-            duration: eff.duration,
+            // Imbue duration extension (Duration Extender / ImbuedBonusDuration) lengthens this
+            // ability's displayed duration; 1× when unassigned.
+            duration: eff.duration != null ? eff.duration * durationMult : eff.duration,
             charges: eff.charges,
             chargeCooldown: a.chargeCooldown,
             damageType: type,
@@ -303,9 +352,11 @@ function buildAbilityRows(
             tiers,
         };
         if (isDot) {
-            // Channeled/burn DoT — a per-second rate, not an instant-burst hit.
-            const perSec = (eff.dotDps + spirit * eff.scale) * res;
-            const dotFull = perSec * (eff.dotDuration ?? 0);
+            // Channeled/burn DoT — a per-second rate, not an instant-burst hit. The imbued Spirit
+            // Power lifts the per-second rate (via `spirit`); the imbued duration extension
+            // lengthens how long it ticks (dotFull), leaving the rate unchanged.
+            const perSec = (eff.dotDps + spirit * eff.scale) * res * tierMult;
+            const dotFull = perSec * ((eff.dotDuration ?? 0) * durationMult);
             return {
                 ...base,
                 display: type === "utility" ? "—" : `${Math.round(perSec).toLocaleString()}/s`,
@@ -314,11 +365,20 @@ function buildAbilityRows(
                 dotFull: type === "utility" ? 0 : dotFull,
             };
         }
-        const total = calculateAbilityDamage(
+        // Imbued Spirit Power raises the coefficient term for THIS ability only, so feed a
+        // spirit-boosted stat view into the damage calc (unchanged when unassigned).
+        const attackerStatsForAbility = imb?.spiritPower ? { ...heroStats, spiritPower: spirit } : heroStats;
+        const totalRaw = calculateAbilityDamage(
             { baseDamage: eff.damage, spiritScaling: eff.scale, dotDps: eff.dotDps, dotDuration: eff.dotDuration },
-            heroStats,
+            attackerStatsForAbility,
             targetStats
         ).mitigatedDamage;
+        // Spirit direct hits take the target Spirit Amp too (weapon abilities are unaffected).
+        const totalBase = type === "spirit" ? totalRaw * spiritAmpMult : totalRaw;
+        // %-of-health rider (Vyper Lethal Venom, current-health scalers): pct% of the target's max
+        // health at FULL health, mitigated through this ability's own resist/amp channel (`res`).
+        // The curated tier multiplier (×2 second strike) scales the whole hit, health rider included.
+        const total = (totalBase + healthScaledAdd(a, targetStats.maxHealth ?? 0) * res) * tierMult;
         return {
             ...base,
             display: type === "utility" ? "—" : Math.round(total).toLocaleString(),
@@ -390,11 +450,14 @@ function computeBurst(
     falloffMultiplier: number,
     abilities: AbilityRow[],
     disabled: Set<number>,
-    critScale: number
+    critScale: number,
+    spiritAmpMult = 1
 ): BurstResult {
     const { shots, headshots } = opts;
     const bulletRes = 1 - (targetStats.bulletResist ?? 0) / 100;
-    const spiritRes = 1 - (targetStats.spiritResist ?? 0) / 100;
+    // Spirit mitigation includes the target's stacking Spirit Amp (Escalating Exposure) — a
+    // target-takes-more-damage multiplier folded into every spirit-typed proc/active below.
+    const spiritRes = (1 - (targetStats.spiritResist ?? 0) / 100) * spiritAmpMult;
 
     // Instant ability hits go straight into burst. DoT abilities contribute a short
     // 0.5s "tag" slice to burst, and also report their per-second + full-duration totals.
@@ -491,19 +554,36 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
     // Stacking items (Berserker/Glass Cannon): fold `stacks × per-stack` into the stat
     // sums as synthetic modifiers. Stacks are per item (item id → count), defaulting to the
     // item's own max when unset. Spirit power is a flat add; weapon damage / fire rate are %.
+    // `spiritAmp` (Escalating Exposure) and `heal` (Restorative Locket) are stacking effects that
+    // are NOT computed stats — the amp is a target-side spirit-damage multiplier and heal is pure
+    // sustain — so they're handled separately below and excluded from the stat-modifier fold here.
+    const stacksFor = (it: ItemData, e: StackingEffect) => {
+        const max = e.maxStacks ?? 0;
+        return Math.min(opts.stacksByItem?.[it.id] ?? max, max);
+    };
+    const NON_STAT_STACKS = new Set(["spiritAmp", "heal"]);
     const stackMods: StatModifier[] = itemEffects.flatMap(({ it, effects: effs }) =>
         effs
             .filter((e): e is StackingEffect => e.kind === "stacking")
             .flatMap((e) => {
                 const stat = e.stat;
-                if (!stat) return [];
-                const max = e.maxStacks ?? 0;
-                const n = Math.min(opts.stacksByItem?.[it.id] ?? max, max);
-                const amt = n * e.value;
+                if (!stat || NON_STAT_STACKS.has(stat)) return [];
+                const amt = stacksFor(it, e) * e.value;
                 const flat = FLAT_STACK_STATS.has(stat);
                 return [{ statName: stat, flatBonus: flat ? amt : 0, percentBonus: flat ? 0 : amt }];
             })
     );
+    // Escalating Exposure: each stack adds `value`% Spirit Amp to the target → the target takes
+    // more spirit damage. Amps stack additively across such items/stacks. 1 = no amp.
+    const spiritAmpMult = 1 + itemEffects.reduce((sum, { it, effects: effs }) =>
+        sum + effs
+            .filter((e): e is StackingEffect => e.kind === "stacking" && e.stat === "spiritAmp")
+            .reduce((s, e) => s + stacksFor(it, e) * e.value, 0), 0) / 100;
+    // Restorative Locket: heal-per-stack sustain (no damage). Summed as a readout only.
+    const healSustain = itemEffects.reduce((sum, { it, effects: effs }) =>
+        sum + effs
+            .filter((e): e is StackingEffect => e.kind === "stacking" && e.stat === "heal")
+            .reduce((s, e) => s + stacksFor(it, e) * e.value, 0), 0);
     // Active items' on-cast self-buffs apply only while "Actives firing" is on.
     const activeBuffMods: StatModifier[] = (opts.activesFiring
         ? effects.filter((e): e is ActiveBuffEffect => e.kind === "activeBuff" && !!e.stat)
@@ -546,7 +626,9 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
     const damagePerShot = combat.damagePerBullet * cwm;
 
     const bulletResFactor = 1 - (targetStats.bulletResist ?? 0) / 100;
-    const spiritResFactor = 1 - (targetStats.spiritResist ?? 0) / 100;
+    // Spirit mitigation folds in the target's Spirit Amp (Escalating Exposure) so every spirit
+    // number — sustained procs, the Spirit panel — takes the same target-takes-more multiplier.
+    const spiritResFactor = (1 - (targetStats.spiritResist ?? 0) / 100) * spiritAmpMult;
 
     // On-hit procs sustained over time: a proc fires every `procCooldown` seconds
     // (0 = every shot), capped at the weapon's fire rate. Folded into sustained DPS.
@@ -612,7 +694,26 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
             };
         });
 
-    const abilities = buildAbilityRows(hero.abilities ?? [], heroStats, targetStats, opts.abilityRanks);
+    // Imbue recompute: map each assigned ability id → the imbue item's magnitude (Spirit Power +
+    // duration %). `opts.imbueAssign` is imbue item id → ability id; the magnitude comes from that
+    // item's ImbueEffect. Applied to the assigned ability only inside buildAbilityRows.
+    const imbueByAbility = new Map<number, ImbueForAbility>();
+    if (opts.imbueAssign) {
+        for (const { it, effects: effs } of itemEffects) {
+            const abilityId = opts.imbueAssign[it.id];
+            if (abilityId == null) continue;
+            for (const e of effs) {
+                if (e.kind !== "imbue") continue;
+                const prev = imbueByAbility.get(abilityId) ?? { spiritPower: 0, durationPct: 0 };
+                imbueByAbility.set(abilityId, {
+                    spiritPower: prev.spiritPower + (e.imbuedSpiritPower ?? 0),
+                    durationPct: prev.durationPct + (e.imbuedDurationPct ?? 0),
+                });
+            }
+        }
+    }
+
+    const abilities = buildAbilityRows(hero.abilities ?? [], heroStats, targetStats, opts.abilityRanks, spiritAmpMult, imbueByAbility, hero.name, opts.tierBehaviorsOverride ?? TIER_BEHAVIORS);
     const burst = computeBurst(
         opts,
         effects,
@@ -622,7 +723,8 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
         combat.falloffMultiplier,
         abilities,
         disabled,
-        target.hero.critDamageReceivedScale ?? 1
+        target.hero.critDamageReceivedScale ?? 1,
+        spiritAmpMult
     );
 
     return {
@@ -645,5 +747,7 @@ export function simulate(build: Build, target: Target, opts: SimOptions): SimRes
         abilities,
         burst,
         spiritItemDamage,
+        sustain: { heal: healSustain },
+        spiritAmpMult,
     };
 }
