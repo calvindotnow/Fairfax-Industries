@@ -19,3 +19,41 @@ export function filterHeroes<T extends { name: string }>(heroes: T[], query: str
   if (!q) return heroes;
   return heroes.filter((h) => h.name.toLowerCase().includes(q));
 }
+
+/**
+ * Lane Lab v2 (D1) — pure enemy-loadout selection + the one-way "take control"
+ * transition, extracted so the hard invariants are unit-testable without a
+ * component harness.
+ */
+
+/**
+ * Which enemy list the sim/counter actually read (works for id lists or equipped
+ * item lists — generic over the element type).
+ * Auto on + available → the derived (auto) list; otherwise the hand-built one.
+ * Auto off ⇒ returns `manual` unchanged ⇒ byte-identical no-op vs pre-v2.
+ */
+export function effectiveEnemyLoadout<T>(
+  autoEnemy: boolean,
+  autoEnemyAvailable: boolean,
+  autoLoadout: T[],
+  manualLoadout: T[],
+): T[] {
+  return autoEnemy && autoEnemyAvailable ? autoLoadout : manualLoadout;
+}
+
+/**
+ * The manual (`targetLoadout`) seed to commit when a manual enemy edit happens while
+ * auto is on: the derived enemy that was on screen, capped, with the edit applied —
+ * so the user keeps exactly what they saw plus their change. Never derived from, nor
+ * writes into, the auto path itself. `maxItems` caps an add.
+ */
+export function takeControlSeed(
+  autoLoadout: number[],
+  edit: { type: "add"; id: number } | { type: "remove"; id: number },
+  maxItems: number,
+): number[] {
+  const base = autoLoadout.slice(0, maxItems);
+  if (edit.type === "remove") return base.filter((x) => x !== edit.id);
+  if (base.includes(edit.id) || base.length >= maxItems) return base; // add is a no-op when owned/full
+  return [...base, edit.id];
+}

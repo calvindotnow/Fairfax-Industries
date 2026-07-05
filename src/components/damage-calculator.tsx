@@ -15,6 +15,7 @@ import OnboardingTour, { type TourStep } from "@/components/onboarding-tour";
 import RollingNumber from "@/components/rolling-number";
 import { VersusBand, InfoDot, type Category, CAT_COLOR } from "@/components/versus-band";
 import { ProgressionPanel } from "@/components/progression-panel";
+import { getBuildPath } from "@/lib/lane-lab";
 
 interface DamageCalculatorProps {
     heroes: HeroWithAbilities[];
@@ -478,6 +479,7 @@ export default function DamageCalculator({ heroes, items, initialHeroId = null, 
                     open={showProgression}
                     onToggle={() => setShowProgression((v) => !v)}
                     buildLabel={compareOn ? activeBuild : null}
+                    buildPath={heroId != null ? getBuildPath(heroId) : []}
                 />
                 </div>
             )}

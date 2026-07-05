@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
 import { simulate, parseEffects, abilityExecute, sumPercentModifiers } from "@/lib/sim";
 import { encodeBuild, type ShareState } from "@/lib/build-code";
-import { defaultShotsForFireRate } from "@/lib/hideout-utils";
+import { defaultShotsForFireRate, effectiveEnemyLoadout, takeControlSeed } from "@/lib/hideout-utils";
+import { buildPathAtSouls, getBuildPath } from "@/lib/lane-lab";
 
 export const MAX_LOADOUT = 12; // Deadlock caps a build at 12 active items.
 
@@ -70,6 +71,12 @@ export function useBuild({
     // Build progression (FR-1): scrub the ordered purchase timeline. `checkpoint`
     // is an index into the active loadout being previewed (null = full build).
     const [checkpoint, setCheckpoint] = useState<number | null>(null);
+    // Lane Lab v2 (D1): the enemy laner auto-fills its average build path, advancing
+    // as your souls climb. When on, the sim/counter read a *derived* enemy loadout —
+    // `targetLoadout` (the hand-built enemy) is never mutated by the auto-fill. A manual
+    // enemy edit flips this off (one-way), keeping today's exact-mode behavior underneath.
+    // Default on for a fresh lane; auto-off is a byte-identical no-op vs pre-v2.
+    const [autoEnemy, setAutoEnemy] = useState(true);
 
     // Toast notification system — used by build action handlers (startCompare, addWithCollapse).
     // `toast` is returned so the component can render the notification UI.
@@ -88,6 +95,13 @@ export function useBuild({
         setAbilityRanks({}); // ranks are per-ability — reset to base on a hero swap
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [heroId]);
+
+    // A fresh enemy laner starts in auto mode (D1). Swapping the enemy hero re-arms
+    // auto-fill for the new hero — the previous hand-built enemy stays in targetLoadout
+    // underneath, but the intent on a new matchup is "show me the average enemy".
+    useEffect(() => {
+        setAutoEnemy(true);
+    }, [targetId]);
 
     // (URL state — ?b= build codes and ?hero= portrait links — is decoded
     // server-side in page.tsx and seeded via props, so there's no mount-time
@@ -114,14 +128,41 @@ export function useBuild({
     const equippedB = useMemo(() => loadoutB.map((id) => items.find((i) => i.id === id)!).filter(Boolean), [loadoutB, items]);
     const targetEquipped = useMemo(() => targetLoadout.map((id) => items.find((i) => i.id === id)!).filter(Boolean), [targetLoadout, items]);
 
-    // Both builds run against the same hero, target, and scenario.
-    const sharedSim = { hero, target, targetEquipped, matchTargetLevel, range, shots, headshots, accuracy, headshotPct, disabledAbilities, hittingEnemy, resistDebuffs, activesFiring, stacksByItem, abilityRanks, excludedActives, imbueAssign };
+    // ── Lane Lab v2 (D1): the auto-progressing average enemy ──────────────────────
+    // Auto-fill is available only when the enemy hero has a baked build path.
+    const autoEnemyAvailable = useMemo(() => target != null && getBuildPath(target.id).length > 0, [target]);
+    // Mirror YOUR souls at the active progression checkpoint: the souls your build
+    // costs by the previewed step (checkpoint slice) or, with no checkpoint, the full
+    // build. Computed straight from the equipped items' soul cost so it's independent
+    // of the sim (no feedback loop through the enemy the sim reads) and matches the
+    // engine's own `soulsSpent = Σ soulCost` exactly.
+    const soulsOf = (list: ItemWithModifiers[]) => list.reduce((s, it) => s + (it.soulCost ?? 0), 0);
+    const yourSouls = useMemo(() => {
+        const active = activeBuild === "B" ? loadoutB : loadoutA;
+        const slice = checkpoint != null && checkpoint < active.length ? active.slice(0, checkpoint + 1) : active;
+        return soulsOf(slice.map((id) => items.find((i) => i.id === id)!).filter(Boolean));
+    }, [activeBuild, loadoutA, loadoutB, checkpoint, items]);
+    // Derived enemy loadout: never written into `targetLoadout` — purely computed.
+    const autoEnemyLoadout = useMemo(
+        () => (autoEnemy && target ? buildPathAtSouls(target.id, yourSouls, MAX_LOADOUT) : []),
+        [autoEnemy, target, yourSouls]
+    );
+    const autoEnemyEquipped = useMemo(
+        () => autoEnemyLoadout.map((id) => items.find((i) => i.id === id)!).filter(Boolean),
+        [autoEnemyLoadout, items]
+    );
+    // The enemy the whole /lane surface (sim + counter panel + VS band) actually reads.
+    // Auto off ⇒ exactly `targetEquipped` ⇒ byte-identical no-op vs pre-v2.
+    const effectiveEnemyEquipped = effectiveEnemyLoadout(autoEnemy, autoEnemyAvailable, autoEnemyEquipped, targetEquipped);
+
+    // Both builds run against the same hero, target (effective enemy), and scenario.
+    const sharedSim = { hero, target, effectiveEnemyEquipped, matchTargetLevel, range, shots, headshots, accuracy, headshotPct, disabledAbilities, hittingEnemy, resistDebuffs, activesFiring, stacksByItem, abilityRanks, excludedActives, imbueAssign };
     const simAttacker = (atkItems: ItemWithModifiers[]) =>
         !hero || !target
             ? null
             : simulate(
                   { hero, items: atkItems },
-                  { hero: target, items: targetEquipped, matchAttackerLevel: matchTargetLevel },
+                  { hero: target, items: effectiveEnemyEquipped, matchAttackerLevel: matchTargetLevel },
                   { range, shots, headshots, disabledAbilityIds: [...disabledAbilities], hittingEnemy, resistDebuffs, activesFiring, stacksByItem, accuracy, headshotPct, abilityRanks, excludedActiveItemIds: [...excludedActives], imbueAssign }
               );
     /* eslint-disable react-hooks/exhaustive-deps */
@@ -273,8 +314,34 @@ export function useBuild({
         });
         setCheckpoint(null);
     };
-    const addTargetItem = addWithCollapse(setTargetLoadout, targetLoadout);
-    const removeTargetItem = (id: number) => setTargetLoadout((l) => l.filter((x) => x !== id));
+    // Manual enemy edit while auto is on → one-way "you took control": seed the
+    // hand-built loadout from what's on screen (the derived enemy) so the edit is
+    // applied on top of it, flip auto off, and toast. `targetLoadout` is only ever
+    // written here (a manual edit), never by the auto-fill — no silent clobber.
+    const takeEnemyControl = () => {
+        if (!(autoEnemy && autoEnemyAvailable)) return false;
+        setTargetLoadout(autoEnemyLoadout.slice(0, MAX_LOADOUT)); // keep what was showing
+        setAutoEnemy(false);
+        showToast("Switched to a custom enemy build");
+        return true;
+    };
+    const rawAddTarget = addWithCollapse(setTargetLoadout, targetLoadout);
+    const addTargetItem = (id: number) => {
+        // On the take-control transition, targetLoadout hasn't been committed yet this
+        // render, so apply the add against the derived base directly (avoids a lost edit).
+        if (takeEnemyControl()) {
+            setTargetLoadout(takeControlSeed(autoEnemyLoadout, { type: "add", id }, MAX_LOADOUT));
+            return;
+        }
+        rawAddTarget(id);
+    };
+    const removeTargetItem = (id: number) => {
+        if (takeEnemyControl()) {
+            setTargetLoadout(takeControlSeed(autoEnemyLoadout, { type: "remove", id }, MAX_LOADOUT));
+            return;
+        }
+        setTargetLoadout((l) => l.filter((x) => x !== id));
+    };
 
     const activeLoadout = buyingFor === "attacker" ? loadout : targetLoadout;
     const activeAdd = buyingFor === "attacker" ? addItem : addTargetItem;
@@ -313,6 +380,13 @@ export function useBuild({
         equippedA,
         equippedB,
         targetEquipped,
+        // Lane Lab v2 (D1) auto-enemy
+        autoEnemy, setAutoEnemy,
+        autoEnemyAvailable,
+        autoEnemyLoadout,
+        autoEnemyEquipped,
+        effectiveEnemyEquipped,
+        yourSouls,
         equipped,
         resultA,
         resultB,

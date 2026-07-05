@@ -28,10 +28,15 @@ export function VersusBand({ build, narrow, fmt, heroes, showCompare = true }: {
         equipped, removeItem,
         targetId, setTargetId,
         target, matchTargetLevel, setMatchTargetLevel,
-        targetEquipped, removeTargetItem,
+        effectiveEnemyEquipped, removeTargetItem,
+        autoEnemy, autoEnemyAvailable,
         compareOn, compareView, activeBuild,
         onCompareClick, buildShareUrl,
     } = build;
+    // Auto mode shows the derived average enemy; removing one is a manual edit that
+    // flips auto off (handled in useBuild.removeTargetItem). Read-only isn't required —
+    // a remove is a legit "take control" gesture.
+    const autoEnemyActive = autoEnemy && autoEnemyAvailable;
 
     if (!hero || !target || !result) return null;
 
@@ -108,7 +113,7 @@ export function VersusBand({ build, narrow, fmt, heroes, showCompare = true }: {
                             ); })()}
                         </div>
                     </div>
-                    <CompactLoadout equipped={targetEquipped} onRemove={removeTargetItem} soulsSpent={result.targetSoulsSpent} fmt={fmt} accent="var(--danger-500)" emptyHint />
+                    <CompactLoadout equipped={effectiveEnemyEquipped} onRemove={removeTargetItem} soulsSpent={result.targetSoulsSpent} fmt={fmt} accent="var(--danger-500)" emptyHint auto={autoEnemyActive} />
                 </div>
             </div>
 
@@ -245,11 +250,14 @@ function SideLabel({ color, children }: { color: string; children: React.ReactNo
     return <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.18em", textTransform: "uppercase", color }}>{children}</span>;
 }
 
-function CompactLoadout({ equipped, onRemove, soulsSpent, fmt, accent = "var(--text-dim)", emptyHint = false }: { equipped: ItemWithModifiers[]; onRemove: (id: number) => void; soulsSpent: number; fmt: (n: number) => string; accent?: string; emptyHint?: boolean }) {
+function CompactLoadout({ equipped, onRemove, soulsSpent, fmt, accent = "var(--text-dim)", emptyHint = false, auto = false }: { equipped: ItemWithModifiers[]; onRemove: (id: number) => void; soulsSpent: number; fmt: (n: number) => string; accent?: string; emptyHint?: boolean; auto?: boolean }) {
     return (
         <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 7, paddingTop: 4 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.16em", textTransform: "uppercase", color: accent }}>Loadout</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.16em", textTransform: "uppercase", color: accent }}>Loadout</span>
+                    {auto && <span title="Average build for this enemy — advances as your souls climb. Edit to take control." style={{ fontFamily: "var(--font-oswald)", fontWeight: 700, fontSize: 8.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--brass-300)", background: "color-mix(in srgb, var(--brass-500) 16%, transparent)", border: "1px solid var(--border-brass)", borderRadius: "var(--r-xs)", padding: "1px 5px" }}>Avg</span>}
+                </span>
                 <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
                     <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--cash-500)", boxShadow: "0 0 6px var(--cash-500)" }} />
                     <span style={{ fontFamily: "var(--font-numeric)", fontVariantNumeric: "tabular-nums", fontSize: 13, color: "var(--cash-500)" }}>{fmt(soulsSpent)}</span>
