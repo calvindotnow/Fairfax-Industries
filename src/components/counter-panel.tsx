@@ -5,7 +5,7 @@ import type { HeroWithAbilities, ItemWithModifiers } from "@/db/schema";
 import { simulate } from "@/lib/sim";
 import type { SimOptions } from "@/lib/sim";
 import { getMatchup, getCounterItems } from "@/lib/lane-lab";
-import { duelAdvantage, pickCandidates, valuePerSoul, splitByCost, LANE_COST } from "@/lib/counter";
+import { duelAdvantage, pickCandidates, valuePerSoul, splitByCost, withinLaneWindow, LANE_COST } from "@/lib/counter";
 
 // Defensive staple names resolved at runtime so IDs don't need to be hardcoded.
 // These augment the empirical counter pool; the empirical signal is primary.
@@ -102,7 +102,9 @@ export function CounterPanel({
     // Split into lane (affordable) vs power-spike groups, sorted by the appropriate signal
     const { lane, powerSpike } = useMemo(() => {
         const split = splitByCost(liftRows);
-        const laneSorted = [...split.lane].sort(
+        // Lane picks must be lane-timed, not just cheap: drop rows people actually buy
+        // after ~15:00 on average (they'd be mid-game advice wearing a lane label).
+        const laneSorted = [...withinLaneWindow(split.lane)].sort(
             (a, b) => valuePerSoul(b.deltaA, b.soulCost) - valuePerSoul(a.deltaA, a.soulCost)
         );
         const powerSorted = [...split.powerSpike].sort((a, b) => b.deltaA - a.deltaA);
@@ -232,7 +234,7 @@ export function CounterPanel({
                         </span>
                         {lane.length === 0 ? (
                             <p style={{ margin: "0 0 6px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                                No cheap counters for this matchup — see power spikes below.
+                                No counters both affordable and bought early enough for lane — see power spikes below.
                             </p>
                         ) : (
                             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -240,7 +242,7 @@ export function CounterPanel({
                             </div>
                         )}
                         <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.4 }}>
-                            ranked by value per soul · affordable picks
+                            ranked by value per soul · affordable picks bought before 15:00 on average
                         </p>
                     </div>
 
@@ -274,8 +276,10 @@ export function CounterPanel({
                 fontSize: 11, color: "var(--text-dim)", lineHeight: 1.55,
             }}>
                 Groups split by soul cost (lane = §{LANE_COST.toLocaleString()} or under; power spikes = above).
-                Lane counters ranked by sim duel-shift per soul; power spikes by raw duel-shift.
-                Winrate is vs baseline from Deadlock match data (Phantom+, same-lane filter). Buy time is typical from match data — context only, not the split signal.
+                Lane counters ranked by sim duel-shift per soul and limited to items bought before 15:00 on
+                average in real matches — cheap items people actually buy mid-game don&apos;t qualify as lane advice.
+                Power spikes are the save-toward-it exceptions (typically bought 20m+) and ranked by raw duel-shift.
+                Winrate is vs baseline from Deadlock match data (Phantom+, same-lane filter).
             </div>
 
         </div>

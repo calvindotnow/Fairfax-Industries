@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { duelAdvantage, pickCandidates, valuePerSoul, splitByCost, LANE_COST } from "./counter";
+import { duelAdvantage, pickCandidates, valuePerSoul, splitByCost, withinLaneWindow, LANE_COST, LANE_BUY_TIME_MAX_S } from "./counter";
 
 test("duelAdvantage = theirTTK / yourTTK; 0 when you can't kill; 999 sentinel when they can't kill you", () => {
   expect(duelAdvantage(2, 4)).toBe(2);        // you kill in 2s, they in 4s → 2.0 (you win)
@@ -16,6 +16,17 @@ test("pickCandidates merges counters+staples, drops owned, caps at topN", () => 
 test("valuePerSoul = deltaA/soulCost, guards zero cost", () => {
   expect(valuePerSoul(1.2, 1200)).toBeCloseTo(0.001);
   expect(valuePerSoul(1, 0)).toBe(0);
+});
+
+test("withinLaneWindow: drops rows bought after 15:00 avg; keeps the boundary and unknown timing", () => {
+  const rows = [
+    { itemId: 1, buyTimeS: 8 * 60 },                 // 8:00 — genuinely early, kept
+    { itemId: 2, buyTimeS: LANE_BUY_TIME_MAX_S },    // exactly 15:00 — boundary kept
+    { itemId: 3, buyTimeS: LANE_BUY_TIME_MAX_S + 1 },// 15:01 — dropped
+    { itemId: 4, buyTimeS: 33 * 60 },                // 33:00 — the cheap-but-midgame case, dropped
+    { itemId: 5, buyTimeS: null },                   // staples/no data — kept (can't call it late without evidence)
+  ];
+  expect(withinLaneWindow(rows).map((r) => r.itemId)).toEqual([1, 2, 5]);
 });
 
 test("splitByCost: <=LANE_COST is lane (affordable), above is power-spike", () => {

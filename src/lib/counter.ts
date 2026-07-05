@@ -21,6 +21,24 @@ export function pickCandidates(counterItemIds: number[], ownedIds: number[], sta
 /** Counters at/under this soul cost are "affordable/lane" picks; above = tier-4 power spikes. Tunable. */
 export const LANE_COST = 4000;
 
+/**
+ * Lane suggestions must be lane-relevant by REAL timing, not just price: an item that's
+ * cheap but bought at 25min on average is not lane advice. Rows whose average purchase
+ * lands later than this are dropped from the lane list (they can still appear as power
+ * spikes — zero tier-4 counter rows average under 15:00, so gating spikes by this window
+ * would empty that section for every matchup; measured 2026-07-05).
+ * Unknown timing (staples / no data) is kept — we can't call an item "late" without evidence.
+ * Tunable; 15:00 chosen 2026-07-05 (owner call).
+ */
+export const LANE_BUY_TIME_MAX_S = 15 * 60;
+
+/** Filter rows to those plausibly bought during the lane window (see LANE_BUY_TIME_MAX_S). */
+export function withinLaneWindow<T extends { buyTimeS: number | null }>(
+  rows: T[], maxS: number = LANE_BUY_TIME_MAX_S,
+): T[] {
+  return rows.filter((r) => r.buyTimeS == null || r.buyTimeS <= maxS);
+}
+
 /** Counter value normalized by cost — efficient cheap picks beat marginal expensive ones. */
 export function valuePerSoul(deltaA: number, soulCost: number): number {
   return soulCost > 0 ? deltaA / soulCost : 0;
