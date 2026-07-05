@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { getHeroes, getItems } from "./data";
-import { getItemAggregates, getAbilityOrderStats } from "./aggregates";
+import { getItemAggregates, getAbilityOrderStats, getItemAggregateDeltas, getHiddenGems } from "./aggregates";
 
 test("getItemAggregates returns valid [0,1] win/pick rates sorted by pickrate desc", () => {
   const rows = getItemAggregates();
@@ -45,4 +45,35 @@ test("getAbilityOrderStats ability ids resolve against baked abilities", () => {
 
 test("getAbilityOrderStats returns [] for an unknown hero", () => {
   expect(getAbilityOrderStats(-1)).toEqual([]);
+});
+
+test("getItemAggregateDeltas is null or a valid delta array, never fabricated", () => {
+  const deltas = getItemAggregateDeltas();
+  // Absence is a legitimate, expected state (no previous snapshot yet) — must not throw
+  // or silently coerce to [] (that would look identical to "checked, no movement").
+  if (deltas === null) return;
+  expect(Array.isArray(deltas)).toBe(true);
+  const itemIds = new Set(getItems().map((i) => i.id));
+  for (const d of deltas) {
+    expect(itemIds.has(d.itemId)).toBe(true);
+    expect(d.winrate).toBeGreaterThanOrEqual(0);
+    expect(d.winrate).toBeLessThanOrEqual(1);
+    expect(d.pickrate).toBeGreaterThanOrEqual(0);
+    expect(d.pickrate).toBeLessThanOrEqual(1);
+    expect(Number.isFinite(d.winrateDelta)).toBe(true);
+    expect(Number.isFinite(d.pickrateDelta)).toBe(true);
+  }
+});
+
+test("getHiddenGems only returns items meeting the winrate/pickrate/matches bar", () => {
+  const gems = getHiddenGems();
+  const itemIds = new Set(getItems().map((i) => i.id));
+  for (const g of gems) {
+    expect(itemIds.has(g.itemId)).toBe(true);
+    expect(g.winrate).toBeGreaterThanOrEqual(0.56);
+    expect(g.pickrate).toBeLessThanOrEqual(0.1);
+    expect(g.matches).toBeGreaterThanOrEqual(400);
+  }
+  // Sorted by winrate descending.
+  for (let i = 1; i < gems.length; i++) expect(gems[i - 1].winrate).toBeGreaterThanOrEqual(gems[i].winrate);
 });

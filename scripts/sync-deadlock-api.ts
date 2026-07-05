@@ -904,11 +904,56 @@ async function main() {
         if (xl.length > 0) translated_build_paths[dbHeroId] = xl;
     }
 
-    // ─── Curated aggregates (separate lazy JSON for C1/C2) ───────────────────────
+    // ─── Curated aggregates (separate lazy JSON for C1/C2/C3) ────────────────────
     // Translate global item aggregates: each row's item_id (api → DB).
     const translated_item_aggregates = item_aggregates
         .map((r) => { const iid = xlItem(r.item_id); return iid != null ? { item_id: iid, wins: r.wins, matches: r.matches } : null; })
         .filter((r): r is NonNullable<typeof r> => r != null);
+
+    // Carry the previous sync's item_stats forward as "previous" (mirrors baked-data.json's
+    // `snapshots` two-generation pattern above: read the about-to-be-overwritten file BEFORE
+    // writing the new one). Powers C3 Risers/Droppers — null on the very first bake, or if the
+    // prior file predates this shape. Never fabricated; only ever carried from a real prior run.
+    const aggregatesPath = new URL("../src/lib/aggregates-data.json", import.meta.url);
+    let prevItemStats: { item_id: number; wins: number; matches: number }[] | null = null;
+    try {
+        const prevRaw = JSON.parse(readFileSync(aggregatesPath, "utf8")) as {
+            item_stats?: { current?: unknown[]; previous?: unknown[] | null } | unknown[];
+        };
+        const prevItemStatsField = prevRaw.item_stats;
+        // Back-compat: the pre-C3 shape stored item_stats as a flat array (no history).
+        // Treat that flat array as the new "previous" generation so history starts accumulating
+        // from the most recent real bake, rather than discarding it.
+        prevItemStats = Array.isArray(prevItemStatsField)
+            ? (prevItemStatsField as { item_id: number; wins: number; matches: number }[])
+            : (prevItemStatsField?.current as { item_id: number; wins: number; matches: number }[] | undefined) ?? null;
+    } catch { /* first run — no previous aggregates file */ }
+
+    // IDs regenerate on every bake, so a carried-forward generation is only meaningful after
+    // translating it into THIS bake's id space. Names are the stable identity across bakes
+    // (the same invariant the V3 share-code fingerprint relies on): old id → name via the
+    // about-to-be-overwritten baked file, name → new id via this run's bakedItems. Rows whose
+    // item left the pool drop out; if the old bake can't be read, carry nothing — no history
+    // beats wrong history.
+    if (prevItemStats) {
+        try {
+            const oldBaked = JSON.parse(
+                readFileSync(new URL("../src/lib/baked-data.json", import.meta.url), "utf8"),
+            ) as { items?: { id: number; name: string }[] };
+            const oldIdToName = new Map((oldBaked.items ?? []).map((i) => [i.id, i.name]));
+            const nameToNewId = new Map(bakedItems.map((i) => [i.name, i.id]));
+            const translated = prevItemStats
+                .map((r) => {
+                    const name = oldIdToName.get(r.item_id);
+                    const nid = name != null ? nameToNewId.get(name) : undefined;
+                    return nid != null ? { ...r, item_id: nid } : null;
+                })
+                .filter((r): r is NonNullable<typeof r> => r != null);
+            prevItemStats = translated.length > 0 ? translated : null;
+        } catch {
+            prevItemStats = null;
+        }
+    }
 
     // Translate ability_orders: hero key + each order's abilities[] (api ability id → DB ability id).
     // Drop any order that loses an ability in translation (keeps every displayed order fully resolvable).
@@ -944,12 +989,17 @@ async function main() {
         JSON.stringify({ synced_at: now, params: LANE_LAB, counter_stats: translated_counter_stats, counter_item_stats: translated_counter_item_stats, item_stats: translated_item_stats, build_paths: translated_build_paths }),
     );
     writeFileSync(
-        new URL("../src/lib/aggregates-data.json", import.meta.url),
-        JSON.stringify({ synced_at: now, params: { min_average_badge: LANE_LAB.min_average_badge, item_min_matches: ITEM_AGG_MIN_MATCHES, ability_order_min_matches: ABILITY_ORDER_MIN_MATCHES, window_days: LANE_LAB.window_days }, item_stats: translated_item_aggregates, ability_orders: translated_ability_orders }),
+        aggregatesPath,
+        JSON.stringify({
+            synced_at: now,
+            params: { min_average_badge: LANE_LAB.min_average_badge, item_min_matches: ITEM_AGG_MIN_MATCHES, ability_order_min_matches: ABILITY_ORDER_MIN_MATCHES, window_days: LANE_LAB.window_days },
+            item_stats: { current: translated_item_aggregates, previous: prevItemStats },
+            ability_orders: translated_ability_orders,
+        }),
     );
     console.log(`  baked data → src/lib/baked-data.json (${bakedHeroes.length} heroes, ${bakedItems.length} items, ${snapshots.length} snapshots)`);
     console.log(`  lane-lab data → src/lib/lane-lab-data.json (${translated_counter_stats.length} counter pairs, ${activeHeroIds.length} heroes, ${pairCount} per-pair calls, ${Object.keys(translated_build_paths).length} build paths)`);
-    console.log(`  aggregates data → src/lib/aggregates-data.json (${translated_item_aggregates.length} global items, ${Object.keys(translated_ability_orders).length} heroes' ability orders)`);
+    console.log(`  aggregates data → src/lib/aggregates-data.json (${translated_item_aggregates.length} global items${prevItemStats ? `, ${prevItemStats.length} in previous generation` : ", no previous generation yet"}, ${Object.keys(translated_ability_orders).length} heroes' ability orders)`);
     console.log("Done.");
 }
 

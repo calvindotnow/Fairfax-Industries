@@ -17,7 +17,7 @@ const ll = laneLab as unknown as {
   build_paths?: Record<string, { itemId: number }[]>;
 };
 const agg = aggregates as unknown as {
-  item_stats: { item_id: number }[];
+  item_stats: { current: { item_id: number }[]; previous: { item_id: number }[] | null };
   ability_orders: Record<string, { abilities: number[] }[]>;
 };
 
@@ -45,7 +45,10 @@ test("every lane-lab counter_stats hero ref resolves against baked heroes", () =
 
 test("every aggregates item + ability ref resolves against baked data", () => {
   const items = itemIds();
-  for (const r of agg.item_stats) expect(items.has(r.item_id)).toBe(true);
+  for (const r of agg.item_stats.current) expect(items.has(r.item_id)).toBe(true);
+  // `previous` (C3 history) must resolve too when present — it's carried forward from a real
+  // prior sync of the SAME atomic write cycle's id space, never a stale/foreign id set.
+  for (const r of agg.item_stats.previous ?? []) expect(items.has(r.item_id)).toBe(true);
   const abilities = abilityIds();
   for (const orders of Object.values(agg.ability_orders))
     for (const o of orders) for (const a of o.abilities) expect(abilities.has(a)).toBe(true);
