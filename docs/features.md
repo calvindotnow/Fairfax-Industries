@@ -58,6 +58,7 @@ clean, portable, test-covered module.
 - **Patch notes** — `/patch-notes` diffs the two most recent stat snapshots; a "Data synced · <date>" badge in the footer.
 - **Shareable builds** — stateless `?b=` codes (VERSION 3: a 2-byte pool fingerprint detects patch drift and `/b`, `/hideout`, `/lane` warn on stale links; V1/V2 still decode) and crawlable `/b/<code>` pages with metadata, plus a **dynamic Open Graph image** (hero-vs-hero + headline numbers, hard-cached) so build links unfurl in Discord (`src/app/b/[code]/opengraph-image.tsx`).
 - **Two-axis item ranking** — "What people build" on `/items`: most-picked vs highest-winrate (top 10, global aggregates with explicit not-hero-specific provenance and per-row sample sizes). (`src/app/items/item-rankings.tsx`)
+- **Discovery surfaces** — "Hidden gems" on `/items` (high-win / rarely-built, criteria + floors disclosed) plus Risers/Droppers driven by real sync-to-sync aggregate history (`{current, previous}` generations, name-translated across each bake's fresh id space; sections hide when no honest data). (`src/app/items/discoveries.tsx`)
 - **Ability-order win rates** — "Which skill order wins" on `/heroes/<slug>`: top level-up orders as icon sequences with winrate + matches. (`src/app/heroes/[slug]/ability-orders.tsx`)
 - **Patch impact on *your* build** — `/patch-notes?b=<code>` shows exactly which of the build's inputs the patch changed (old→new, per side), with an explicit no-fabricated-numbers disclosure (snapshots are too thin for an honest re-sim); linked from `/hideout` and `/b/<code>`. (`src/lib/build-patch-impact.ts`)
 
@@ -78,7 +79,7 @@ clean, portable, test-covered module.
 
 *(The 2026-07-04 agent sweep shipped the deeper-engine mechanics — stacking amps, %-of-health at full HP, imbue recompute, tier-behavior infrastructure — plus the accessibility pass and the internal refactors. What honestly remains, per [bugs.md](bugs.md): Vyper's ramp-style damage shows the ramp top-end; the curated tier-behavior table is empty because the canonical "Slice and Dice doubles" claim proved false; Spirit-scaled range/duration stays a tag — no coefficient exists in any data source.)*
 
-- 🟡 **Discovery surfaces on `/items`** — Hidden Gems (high-win / rarely-built) now; Risers/Droppers light up automatically once the daily sync accumulates aggregate history. *(In flight.)*
+- *(Nothing in flight — the 2026-07-04 sweep cleared the board. New work starts from the ideas below or fresh feedback.)*
 
 ## Potential new features (ideas, not commitments)
 
