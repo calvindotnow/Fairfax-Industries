@@ -8,7 +8,7 @@ import { fillToSouls, type BuildPath } from "./build-path";
 
 const ll = laneLab as unknown as {
   counter_stats: { hero_id: number; enemy_hero_id: number; wins: number; matches_played: number }[];
-  counter_item_stats: Record<string, Record<string, { item_id: number; wins: number; losses: number; matches: number; avg_buy_time_s?: number | null }[]>>;
+  counter_item_stats: Record<string, Record<string, { item_id: number; wins: number; losses: number; matches: number; median_buy_time_s?: number | null; avg_buy_time_s?: number | null }[]>>;
   item_stats: Record<string, { item_id: number; wins: number; losses: number; matches: number }[]>;
   build_paths?: Record<string, { itemId: number; souls: number; pickrate: number; winrate: number }[]>;
 };
@@ -22,7 +22,11 @@ export function getMatchup(youId: number, enemyId: number): { winrate: number; m
 
 export function getCounterItems(youId: number, enemyId: number): { itemId: number; winrate: number; matches: number; buyTimeS: number | null }[] {
   const rows = ll.counter_item_stats[youId]?.[enemyId] ?? [];
-  return rows.map((r) => ({ itemId: r.item_id, winrate: wr(r.wins, r.wins + r.losses), matches: r.matches, buyTimeS: r.avg_buy_time_s ?? null }))
+  // buyTimeS is the MEDIAN purchase time (minute resolution) — the mean gets dragged late by
+  // players buying cheap items as mid-game slot fillers, which over-triggered the 15:00 lane
+  // gate. avg_buy_time_s is the pre-2026-07-05 field, kept as a fallback so the app works
+  // against a not-yet-re-baked data file.
+  return rows.map((r) => ({ itemId: r.item_id, winrate: wr(r.wins, r.wins + r.losses), matches: r.matches, buyTimeS: r.median_buy_time_s ?? r.avg_buy_time_s ?? null }))
              .sort((a, b) => b.winrate - a.winrate);
 }
 

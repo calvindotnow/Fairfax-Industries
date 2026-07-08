@@ -22,11 +22,12 @@ export function pickCandidates(counterItemIds: number[], ownedIds: number[], sta
 export const LANE_COST = 4000;
 
 /**
- * Lane suggestions must be lane-relevant by REAL timing, not just price: an item that's
- * cheap but bought at 25min on average is not lane advice. Rows whose average purchase
- * lands later than this are dropped from the lane list (they can still appear as power
- * spikes — zero tier-4 counter rows average under 15:00, so gating spikes by this window
- * would empty that section for every matchup; measured 2026-07-05).
+ * Lane suggestions must be lane-relevant by REAL timing, not just price. The signal is the
+ * MEDIAN purchase time (since 2026-07-05; the mean was dragged past 15:00 by mid-game filler
+ * purchases of cheap items and over-filtered the lane list). Rows whose median purchase lands
+ * later than this are dropped from the lane list; they can still appear as power spikes
+ * (owner call 2026-07-05: power spikes stay exempt — tier-4 counters are bought 20m+ across
+ * the board and the section is explicitly the save-toward-it list).
  * Unknown timing (staples / no data) is kept — we can't call an item "late" without evidence.
  * Tunable; 15:00 chosen 2026-07-05 (owner call).
  */

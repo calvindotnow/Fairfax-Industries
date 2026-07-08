@@ -242,7 +242,7 @@ export function CounterPanel({
                             </div>
                         )}
                         <p style={{ margin: "8px 0 0", fontSize: 11, color: "var(--text-dim)", lineHeight: 1.4 }}>
-                            ranked by value per soul · affordable picks bought before 15:00 on average
+                            ranked by value per soul · affordable picks typically bought before 15:00 (median)
                         </p>
                     </div>
 
@@ -276,9 +276,10 @@ export function CounterPanel({
                 fontSize: 11, color: "var(--text-dim)", lineHeight: 1.55,
             }}>
                 Groups split by soul cost (lane = §{LANE_COST.toLocaleString()} or under; power spikes = above).
-                Lane counters ranked by sim duel-shift per soul and limited to items bought before 15:00 on
-                average in real matches — cheap items people actually buy mid-game don&apos;t qualify as lane advice.
-                Power spikes are the save-toward-it exceptions (typically bought 20m+) and ranked by raw duel-shift.
+                Lane counters ranked by sim duel-shift per soul and limited to items whose <em>median</em> buy
+                time in real matches is before 15:00 — half of buyers have it by then, and the median (unlike the
+                mean) isn&apos;t dragged late by mid-game filler purchases. Power spikes are the save-toward-it
+                exceptions (typically bought 20m+) and ranked by raw duel-shift.
                 Winrate is vs baseline from Deadlock match data (Phantom+, same-lane filter).
             </div>
 

@@ -804,11 +804,34 @@ async function main() {
         counter_item_stats[hid] = {};
         for (const eid of activeHeroIds) {
             if (eid === hid) continue;
+            // `bucket=game_time_min` groups rows by PURCHASE minute (verified 2026-07-05: the
+            // per-item bucketed `matches` sum exactly equals the unbucketed total), so one call
+            // yields a purchase histogram per item at the same request budget. We reduce it to
+            // totals + a weighted MEDIAN buy time: the mean is dragged late by players who buy
+            // cheap items as 5th-slot fillers mid-game (probe: median 4m vs mean 6.1m on the
+            // pair's most-bought item), which made the 15:00 lane-window gate over-filter.
+            // NOTE: with a bucket param the API applies `min_matches` PER MINUTE-BUCKET — keep
+            // it low (5, trims only noise-tail minutes) and apply the real per-item floor (>=50)
+            // after summing, mirroring the old per-item behavior.
             const rows: any[] = await getJSON(
-                `${ANALYTICS_API}/item-stats?hero_ids=${hid}&enemy_hero_ids=${eid}&same_lane_filter=true&min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&min_matches=50`,
+                `${ANALYTICS_API}/item-stats?hero_ids=${hid}&enemy_hero_ids=${eid}&same_lane_filter=true&min_average_badge=${LANE_LAB.min_average_badge}&min_unix_timestamp=${since}&min_matches=5&bucket=game_time_min`,
             );
-            counter_item_stats[hid][eid] = rows
-                .map((r) => ({ item_id: r.item_id, wins: r.wins, losses: r.losses, matches: r.matches, avg_buy_time_s: Math.round(r.avg_buy_time_s ?? 0) || null }))
+            const byItem = new Map<number, { wins: number; losses: number; matches: number; hist: { min: number; matches: number }[] }>();
+            for (const r of rows) {
+                const it = byItem.get(r.item_id) ?? { wins: 0, losses: 0, matches: 0, hist: [] };
+                it.wins += r.wins; it.losses += r.losses; it.matches += r.matches;
+                it.hist.push({ min: r.bucket, matches: r.matches });
+                byItem.set(r.item_id, it);
+            }
+            counter_item_stats[hid][eid] = [...byItem.entries()]
+                .filter(([, v]) => v.matches >= 50)
+                .map(([item_id, v]) => {
+                    v.hist.sort((a, b) => a.min - b.min);
+                    let acc = 0;
+                    let medianMin = v.hist.length > 0 ? v.hist[v.hist.length - 1].min : 0;
+                    for (const h of v.hist) { acc += h.matches; if (acc >= v.matches / 2) { medianMin = h.min; break; } }
+                    return { item_id, wins: v.wins, losses: v.losses, matches: v.matches, median_buy_time_s: medianMin * 60 || null };
+                })
                 .sort((a, b) => (b.wins / Math.max(b.matches, 1)) - (a.wins / Math.max(a.matches, 1)))
                 .slice(0, TOP_N_COUNTER_ITEMS);
             pairCount++;
@@ -849,8 +872,8 @@ async function main() {
     // /v1/assets/items/by-hero-id/{hero_id} (per the research appendix), then join to the baked
     // ability rows by (heroDbId, abilityName). Built per hero so identically-named abilities across
     // heroes never collide.
-    const _abilityNameToDbId = new Map<string, number>(); // key: `${dbHeroId} ${abilityName}`
-    for (const bh of bakedHeroes) for (const ab of (bh as any).abilities ?? []) _abilityNameToDbId.set(`${bh.id} ${ab.name}`, ab.id);
+    const _abilityNameToDbId = new Map<string, number>(); // key: `${dbHeroId}\x00${abilityName}`
+    for (const bh of bakedHeroes) for (const ab of (bh as any).abilities ?? []) _abilityNameToDbId.set(`${bh.id}\x00${ab.name}`, ab.id);
     // apiAbilityId → ability name (fetched per hero, one call each — cheap, cached in a map).
     const _apiAbilityIdToName = new Map<number, string>();
     for (const hid of activeHeroIds) {
@@ -862,7 +885,7 @@ async function main() {
     }
     const xlAbility = (dbHeroId: number, apiAbilityId: number): number | null => {
         const name = _apiAbilityIdToName.get(apiAbilityId);
-        return name != null ? (_abilityNameToDbId.get(`${dbHeroId} ${name}`) ?? null) : null;
+        return name != null ? (_abilityNameToDbId.get(`${dbHeroId}\x00${name}`) ?? null) : null;
     };
 
     // Translate counter_stats: hero_id + enemy_hero_id; project to the 4 fields we use
